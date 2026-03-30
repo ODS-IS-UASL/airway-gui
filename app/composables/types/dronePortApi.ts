@@ -2,6 +2,18 @@ export type CommonResponse = {
   errorDetail: string // エラー詳細
 }
 
+/** 料金表管理情報（API レスポンス用） */
+export type PriceInfoRecord = {
+  priceId: string | null
+  price: number
+  priceType: number
+  pricePerUnit: number
+  effectiveStartTime: string
+  effectiveEndTime: string
+  priority?: number
+  processingType?: number
+}
+
 /**
    * ドローンポート情報登録
    */
@@ -121,6 +133,9 @@ export type DronePortGetByPkResponse = {
   inactiveTimeFrom: string // 使用不可開始日時
   inactiveTimeTo: string // 使用不可終了日時
   imageData: string // 画像
+  // 料金表管理改修  Start
+  priceInfos: PriceInfoRecord[] // 料金表管理情報
+  // 料金表管理改修  End
 }
 
 /**
