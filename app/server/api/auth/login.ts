@@ -1,91 +1,42 @@
-
-import {NuxtAuthHandler} from '#auth';
-import jwt from 'jsonwebtoken';
-import axios from 'axios';
-import { Buffer } from 'buffer';
+import { getLoginUrl } from '~/server/utils/ouranos';
 import { defineEventHandler } from 'h3'
 
-
-export const SECRET_KEY = 'Drone_route_service';
-
-export const jwt_decode_token = async (token: string) => {
-  try {
-    const parts = token.split('.');
-    // ペイロードをデコード
-    const decode = Buffer.from(parts[1], 'base64');
-    const payload = decode.toString();
-
-    return payload;
-  } catch (error) {
-    console.error(`jwt_decode_token error:${error}`);
-    throw new Error(error);
-  }
-}
-
 export default defineEventHandler(async (event) => {
-    try {
-      const {userId, password} = await readBody(event);
-      let jwt_payload = {};
-      /* API利用版ログイン認証 */
-        // アクセストークン取得(ログイン認証apiの実行)
-        const authApiBaseUrl = useRuntimeConfig().public.authApiBaseUrl;
-        const url_login = `${authApiBaseUrl}/auth/login`;
-        const APIKey = useRuntimeConfig().public.loginApiKey; // システムごとに払い出されるキー
-        const params_login = {
-          operatorAccountId: userId,
-          accountPassword: password
-        };
-        const request_header = {
-          headers: {
-            'apiKey': APIKey,
-            'Content-Type': 'application/json'
-          }
-        };
-        const res_login = await axios.post(url_login, params_login, request_header);
-        const tokens = res_login.data;
-        // アクセストークンをデコードし、operatorIdを取得
-        const decode = await jwt_decode_token(tokens.accessToken);
-        const accessToken_json = JSON.parse(decode);
-        const operatorId = accessToken_json.operator_id;
+  const config = useRuntimeConfig()
+  const ACCESS_TOKEN_COOKIE = config.public.ouranos.cookie.accessToken;
+  const EXPIRES_AT_COOKIE = config.public.ouranos.cookie.expiresAt;
+  const CODE_VERIFIRE_COOKIE = config.public.ouranos.cookie.codeVerifier;
+  const secureFlg = config.public.ouranos.cookie.secureFlg;
 
-        // ロールを取得
-        const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-        const headers_role = {
-          headers: {
-            'Authorization': `Bearer ${tokens.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        };
-
-        const url_role = `${miscApiBaseUrl}/operatorRole?operatorId=${operatorId}`;
-        const res_role = await axios.get(url_role, headers_role);
-        const roles = res_role.data;
-
-        //JWTトークン作成
-        jwt_payload = {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          operatorId: roles.operatorId,
-          operatorName: roles.operatorName,
-          roleList: roles.roleList
-        }
-
-      const expires = {
-        expiresIn: '12h'
-      }
-      const jwt_token = await jwt.sign(
-        jwt_payload,
-        SECRET_KEY,
-        expires
-      );
-
+  const accessToken = getCookie(event, ACCESS_TOKEN_COOKIE);
+  const expiresAt = getCookie(event, EXPIRES_AT_COOKIE)
+  let response;
+  if (accessToken && expiresAt) {
+    const now = Math.floor(Date.now() / 1000);
+    if (now < Number(expiresAt)) {
+      // アクセストークンの有効期限が切れていない
       return {
-        token: jwt_token,
-      }
-    } catch (error) {
-        console.error(`login faild(${error}).`);
-        return {
-          token: `login faild(${error}).`
-        }
+        uri: ""
+      };
     }
+  }
+  // アクセストークンが Cookie にない、または、アクセストークンが無効の場合にログインURLを取得
+  try {
+    response = await getLoginUrl();
+  } catch (error) {
+    throw error;
+  }
+  
+  // token 交換に必要なのでサーバ側で保持
+  // 見られても問題ない値のため httponly は false
+  setCookie(event, CODE_VERIFIRE_COOKIE, response.codeVerifier, {
+    httpOnly: false,
+    secure: secureFlg,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 10 * 60,
+  })
+  return {
+    uri: response.loginUrl
+  };
 })
