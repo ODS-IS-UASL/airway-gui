@@ -10,6 +10,9 @@ import TablePaging from '~/components/common/TablePaging.vue'
 import ListViewPreView from '~/components/common/ListViewPreView.vue'
 import SearchOption from '~/components/common/SearchOption.vue'
 import PageNavigation from '~/components/navigation/pageNavigation.vue'
+// 料金表管理改修  Start
+import PayloadInfoDialog, { type PayloadInfo } from '~/components/dialogs/PayloadInfoDialog.vue'
+// 料金表管理改修  End
 
 const { getRole } = useCreated()
 definePageMeta({
@@ -52,6 +55,11 @@ interface Aircraft {
   lat: number
   lon: number
   imageData: string
+  // 料金表管理改修  Start
+  priceInfos: any
+  fileInfos: any
+  payloadInfos: any
+  // 料金表管理改修  End
 }
 
 const isLoading = useState('isLoading')
@@ -104,15 +112,20 @@ const totalVisible = 7 // ページングの表示数 // クライアントサ�
 const loadingData = async () => {
   let apiResult
   if (params) {
-    apiResult = await useRestApiAircraftGetList(params)
+    apiResult = await $fetch('/api/drone/aircraft/info/list', { 
+      method: 'GET',
+      query: params
+    });
   }
   else {
-    apiResult = await useRestApiAircraftGetList()
+    apiResult = await $fetch('/api/drone/aircraft/info/list', { 
+      method: 'GET',
+    });
   }
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    const resultJson = (await apiResult.json()) as AircraftGetListResponse
+    const resultJson = apiResult.data
     const dataList = resultJson.data // 検索結果
     lastPage.value = Number(resultJson.lastPage) // 最終ページ
     totalItems.value = Number(resultJson.total) // 取得データ総件数
@@ -138,6 +151,12 @@ const loadingData = async () => {
         lat: data.lat,
         lon: data.lon,
         imageData: data.imageData,
+        // 料金表管理改修  Start
+        modelNumber: data.modelNumber,
+        priceInfos: (data.priceInfos ?? []).slice().sort((a: any, b: any) => Number(a.priority ?? 0) - Number(b.priority ?? 0)),
+        fileInfos: data.fileInfos,
+        payloadInfos: data.payloadInfos,
+        // 料金表管理改修  End
       }
     })
 
@@ -146,9 +165,9 @@ const loadingData = async () => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     commonDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorMessage.value = `機体情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -160,21 +179,29 @@ const loadingData = async () => {
 
 // データ取得処理(機体情報詳細取得API)
 const loadingDetailData = async (params: any) => {
-  const apiResult = await useRestApiAircraftGetByPk(params)
+  // 料金表管理改修  Start
+  const apiResult = await $fetch(`/api/drone/aircraft/info/detail/${params}`, { 
+    method: 'GET',
+    query: {
+      isRequiredPriceInfo: true,
+      isRequiredPayloadInfo: true,
+    }
+  });
+  // 料金表管理改修  End
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return (await apiResult.json()) as AircraftGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = (await apiResult.json()) as CommonResponse
+    const responseBody = apiResult.data
     getByPkFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorMessage.value = `機体情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
-      errorMessage.value = `機体情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+      errorMessage.value = `機体情報の取得に失敗しました。(エラー詳細：)`
     }
   }
 }
@@ -401,6 +428,11 @@ const onRowClick = async (event: any, row: any) => {
   selectedRow.value = row
   const detailData = await loadingDetailData(row.aircraftId)
   selectedRow.value.imageData = detailData?.imageData
+  // 料金表管理改修  Start
+  selectedRow.value.priceInfos = (detailData?.priceInfos ?? []).slice().sort((a: any, b: any) => Number(a.priority ?? 0) - Number(b.priority ?? 0));
+  selectedRow.value.fileInfos = detailData?.fileInfos;
+  selectedRow.value.payloadInfos = detailData?.payloadInfos;
+  // 料金表管理改修  End
   isLoading.value = false
 }
 
@@ -418,6 +450,22 @@ const certificationSelection = (value: boolean) => {
 const nyuryokuShiteKudasai = (item: string) => {
   return `${item}を入力してください。`
 }
+
+// 料金表管理改修  Start
+// ペイロード情報用
+const payloadDialogVisible = ref(false)
+const payloadIsViewMode = ref<true | false>(true)
+const payloadDialogInitialData = ref<PayloadInfo | null>(null)
+  
+/**
+ * ペイロード情報ダイアログを開く
+ * @param payload ペイロード情報
+ */
+const openPayloadDialog = (payload: PayloadInfo) => {
+  payloadDialogInitialData.value = payload
+  payloadDialogVisible.value = true
+}
+// 料金表管理改修  End
 </script>
 
 <template>
@@ -951,11 +999,117 @@ const nyuryokuShiteKudasai = (item: string) => {
                         </v-card>
                       </v-col>
                     </v-row>
+
+                    <!-- 料金表管理改修  Start -->
+                    <v-divider class="border-opacity-25 my-5" />
+                    <v-row>
+                      <v-col cols="4" class="font-weight-bold">
+                        型式番号
+                      </v-col>
+                      <v-col>
+                        {{ selectedRow?.modelNumber }}
+                      </v-col>
+                    </v-row>
+
+                    <v-divider class="border-opacity-25 my-5" />
+                    <v-row>
+                      <v-col cols="4" class="font-weight-bold">
+                        料金表管理
+                      </v-col>
+                    </v-row>
+
+                    <template v-for="(priceInfo, index) in selectedRow?.priceInfos" :key="priceInfo.priceId ?? index">
+                      <!-- 料金単価(円) -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">料金単価(円)</v-col>
+                        <v-col>{{ utils.formatPrice(priceInfo.price) }}</v-col>
+                      </v-row>
+
+                      <!-- 料金タイプ -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">料金タイプ</v-col>
+                        <v-col>{{ convertCode(priceInfo.priceType, 'priceType') }}</v-col>
+                      </v-row>
+
+                      <!-- 時間単位 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">時間単位</v-col>
+                        <v-col>{{ priceInfo.pricePerUnit }}</v-col>
+                      </v-row>
+
+                      <!-- 適用開始日時 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">適用開始日時</v-col>
+                        <v-col>{{ utils.toFormatJSTtime(priceInfo.effectiveStartTime, constants.format.datetimeWithSeconds, 'local') }}</v-col>
+                      </v-row>
+
+                      <!-- 適用終了日時 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">適用終了日時</v-col>
+                        <v-col>{{ utils.toFormatJSTtime(priceInfo.effectiveEndTime, constants.format.datetimeWithSeconds, 'local') }}</v-col>
+                      </v-row>
+
+                      <v-row
+                        v-if="index !== selectedRow!.priceInfos!.length - 1"
+                        no-gutters
+                        class="my-5"
+                      >
+                        <v-col cols="4" />
+                        <v-col>
+                          <v-divider class="border-opacity-25" />
+                        </v-col>
+                      </v-row>
+                    </template>
+
+                    <v-divider class="border-opacity-25 my-5" />
+                    <v-row>
+                      <v-col
+                        cols="4"
+                        class="font-weight-bold"
+                      >
+                        補足資料
+                      </v-col>
+                      <v-col>
+                        <template v-for="(fileInfo, index) in selectedRow?.fileInfos" :key="fileInfo.fileId ?? index">
+                          <a class="d-block" @click="useRestApiFileDownloadFile(selectedRow?.aircraftId, fileInfo.fileId)">
+                            {{ fileInfo.fileLogicalName }}
+                          </a>
+                        </template>
+                      </v-col>
+                    </v-row>
+                    <v-divider class="border-opacity-25 my-5" />
+                    <v-row>
+                      <v-col
+                        cols="4"
+                        class="font-weight-bold"
+                      >
+                        ペイロード情報
+                      </v-col>
+                      <v-col>
+                        <template v-for="(payloadInfo, index) in selectedRow?.payloadInfos" :key="payloadInfo.payloadId ?? index">
+                          <a class="d-block" @click="openPayloadDialog(payloadInfo)">{{ payloadInfo.payloadName }}</a>
+                        </template>
+                      </v-col>
+                    </v-row>
+                    <!-- 料金表管理改修  End -->
                   </v-card>
                 </v-col>
               </v-row>
             </v-container>
           </div>
+          <!-- 料金表管理改修  Start -->
+          <!-- ペイロード情報ダイアログ -->
+          <PayloadInfoDialog
+            v-model:dialog-visible="payloadDialogVisible"
+            :is-view-mode="payloadIsViewMode"
+            :initial-payload="payloadDialogInitialData"
+          />
+          <!-- 料金表管理改修  End -->
           <!-- ページナビゲーション -->
           <PageNavigation
             :back="false"
@@ -1105,7 +1259,9 @@ const nyuryokuShiteKudasai = (item: string) => {
 .aircraft-data-table :deep(th:nth-child(14)) {
   position: sticky !important;
   position: -webkit-sticky !important;
-  right: 200px;
+  /* 予約は非表示にする start */
+  right: 100px;
+  /* 予約は非表示にする end */
   background-color: white;
 }
 
@@ -1113,7 +1269,9 @@ const nyuryokuShiteKudasai = (item: string) => {
   text-align: center;
   position: sticky !important;
   position: -webkit-sticky !important;
-  right: 200px;
+  /* 予約は非表示にする start */
+  right: 100px;
+  /* 予約は非表示にする end */
   background-color: white;
   transition: background-color 0s;
 }
@@ -1121,7 +1279,9 @@ const nyuryokuShiteKudasai = (item: string) => {
 .aircraft-data-table >>> th:nth-child(15) {
   position: sticky !important;
   position: -webkit-sticky !important;
-  right: 100px;
+  /* 予約は非表示にする start */
+  right: 0px;
+  /* 予約は非表示にする end */
   background-color: white;
   max-width: 100px;
   min-width: 100px;
@@ -1131,7 +1291,9 @@ const nyuryokuShiteKudasai = (item: string) => {
   text-align: center;
   position: sticky !important;
   position: -webkit-sticky !important;
-  right: 100px;
+  /* 予約は非表示にする start */
+  right: 0px;
+  /* 予約は非表示にする end */
   background-color: white;
   transition: background-color 0s;
   max-width: 100px;
@@ -1145,6 +1307,9 @@ const nyuryokuShiteKudasai = (item: string) => {
   background-color: white;
   max-width: 100px;
   min-width: 100px;
+  /* 予約は非表示にする start */
+  display: none;
+  /* 予約は非表示にする end */
 }
 
 .aircraft-data-table >>> tr td:nth-child(16) {
@@ -1156,6 +1321,9 @@ const nyuryokuShiteKudasai = (item: string) => {
   transition: background-color 0s;
   max-width: 100px;
   min-width: 100px;
+  /* 予約は非表示にする start */
+  display: none;
+  /* 予約は非表示にする end */
 }
 
 div:has(.locationSearch) {
@@ -1178,6 +1346,11 @@ div:has(.locationSearch) {
 .drn_content {
   padding: 0 !important;
 }
+/* 料金表管理改修  Start */
+.d-block {
+  cursor: pointer;
+}
+/* 料金表管理改修  End */
 </style>
 
 <style>
