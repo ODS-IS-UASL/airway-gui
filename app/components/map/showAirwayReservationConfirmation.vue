@@ -29,12 +29,17 @@ export default {
       type: Object,
       required: true,
     },
-    section: {
-      type: String,
+    sectionList: {
+      type: Array,
       required: true,
     },
+    sectionJunctionIdList: {
+      type: Array,
+      required: false,
+      default: () => []
+    },
     airwayId: {
-      type: String,
+      type: [String, Array],
       required: true,
     },
     showCheckBox: {
@@ -81,7 +86,7 @@ export default {
       return props.id ? `mapShowAirwayReservationConfirmation${props.id}` : 'mapShowAirwayReservationConfirmation';
     });
 
-    const renderMap = async (data, section, id) => {
+    const renderMap = async (data, id, sectionList) => {
       if (process.client) {
         if (map.value) {
           map.value.remove();
@@ -103,181 +108,228 @@ export default {
         ).addTo(map.value);
 
         map.value.zoomControl.setPosition('topleft');
-        const allCoordinates = [];
-        const sectionInfo = [];
+        // ── ここから置き換え ──
 
-        const sections = section.split("~");
-        const start = sections[0].trim();
-        const end = sections[1].trim();
-        let FIND_START = false;
-
-        map.value.on('moveend', (event) => {
-          console.log(`MapLayerControlMounted: ${MapLayerControlMounted.value}`);
-          if (!MapLayerControlMounted.value) {
-            console.log(`map moved:${event}`);
-            map_moveend.value = true;
+        // ヘルパー: ポリゴン(矩形)の中心を算出（最初の4点で平均）
+        const centerFromRect = (coords) => {
+          const n = Math.min(coords.length, 4);
+          let lat = 0, lng = 0;
+          for (let i = 0; i < n; i++) {
+            lat += coords[i][1]; // lat
+            lng += coords[i][0]; // lng
           }
-        });
+          return [lat / n, lng / n]; // Leafletは [lat, lng]
+        };
 
-        data['airway']['airways'].forEach((airwayData) => {
-          let startId = "";
-          let endId = "";
-          if (airwayData.airwayId === id) {
-            airwayData.airwayJunctions.forEach((airwayJunction) => {
-              if (airwayJunction.airwayJunctionName === start) {
-                startId = airwayJunction.airwayJunctionId;
-              } else if (airwayJunction.airwayJunctionName === end) {
-                endId = airwayJunction.airwayJunctionId;
+        // ヘルパー: BFSで最短経路（junctionId配列）を探索
+        const bfsPath = (startId, endId, adjacency) => {
+          if (!startId || !endId) return null;
+          if (startId === endId) return [startId];
+          const queue = [startId];
+          const visited = new Set([startId]);
+          const parent = new Map();
+          while (queue.length) {
+            const cur = queue.shift();
+            const nbrs = adjacency[cur] || [];
+            for (const nb of nbrs) {
+              if (visited.has(nb)) continue;
+              visited.add(nb);
+              parent.set(nb, cur);
+              if (nb === endId) {
+                // 経路復元
+                const path = [endId];
+                while (parent.has(path[path.length - 1])) {
+                  path.push(parent.get(path[path.length - 1]));
+                }
+                path.reverse();
+                return path;
               }
-            });
-
-            // startIdとendIdの順序に応じて処理を切り替える
-              if (props.isEndIdFirst) {
-                // endIdの方が先にヒットした場合
-                airwayData.airwaySections.forEach((section) => {
-                  // IDから黒線を描画する場所を取得
-                  if (section["airwayJunctionIds"][0] === endId) {
-                    if (startId != '') {
-                      FIND_START = true;
-                    }
-                  }
-                  sectionInfo.push(FIND_START);
-
-                  if (section["airwayJunctionIds"][1] === startId) {
-                    FIND_START = false;
-                  }
-
-                  // 航路順に座標データをpush
-                  section.airwayJunctionIds.forEach((id) => {
-                    airwayData.airwayJunctions.forEach((point) => {
-                      if (point.airwayJunctionId === id) {
-                        const coords = point.airways[0].airway.geometry.coordinates;
-                        if (Array.isArray(coords)) {
-                          allCoordinates.push(coords);
-                        }
-                      }
-                    });
-                  });
-                });
-              } else {
-                // startIdの方が先にヒットした場合
-                airwayData.airwaySections.forEach((section) => {
-                  // IDから黒線を描画する場所を取得
-                  if (section["airwayJunctionIds"][0] === startId) {
-                    if (endId != '') {
-                      FIND_START = true;
-                    }
-                  }
-                  sectionInfo.push(FIND_START);
-
-                  if (section["airwayJunctionIds"][1] === endId) {
-                    FIND_START = false;
-                  }
-
-                  // 航路順に座標データをpush
-                  section.airwayJunctionIds.forEach((id) => {
-                    airwayData.airwayJunctions.forEach((point) => {
-                      if (point.airwayJunctionId === id) {
-                        const coords = point.airways[0].airway.geometry.coordinates;
-                        if (Array.isArray(coords)) {
-                          allCoordinates.push(coords);
-                        }
-                      }
-                    });
-                  });
-                });
-              }
-          }
-        });
-
-        const polyline = [];
-        const blackLine = [];
-        let count = 0;
-        allCoordinates.forEach((coords) => {
-          let x = 0;
-          let y = 0;
-          for (let i = 0; i < 4; i++) {
-            if (coords[i][1] !== undefined && coords[i][0] !== undefined) {
-              x += coords[i][1];
-              y += coords[i][0];
+              queue.push(nb);
             }
           }
-          x /= 4;
-          y /= 4;
+          return null;
+        };
 
-          polyline.push([x, y]);
-          const index = Math.floor(count / 2);
-          if (sectionInfo[index] === true) {
-            blackLine.push([x, y]);
+        // id が配列/文字列どちらでもOKにする
+        const targetIds = Array.isArray(id) ? id : (id ? [id] : []);
+
+        // sectionList（航路点名の配列）を正規化
+        const waypointNames = Array.isArray(sectionList)
+          ? sectionList
+          : (typeof sectionList === 'string'
+              ? sectionList.split(',').map(s => s.trim()).filter(Boolean)
+              : []);
+
+        const waypointIds = Array.isArray(props.sectionJunctionIdList)
+          ? props.sectionJunctionIdList.map(v => String(v).trim()).filter(Boolean)
+          : [];
+        const useIdWaypoints = waypointIds.length >= 2;
+
+        // 下地（すべての既存区間）と選択経路（実線/点線）を格納
+        const baseSegments = [];              // dataに存在する区間（airwaySectionsに定義されているもの）だけ
+        const selectedSolidSegments = [];     // ユーザー順に沿って見つかった実在経路（実線）
+        const selectedDashedSegments = [];    // 実在しない部分（補間の点線）
+        // JunctionId → [lat, lng]
+        const junctionLatLngMap = {};
+        // airwayJunctionName → [junctionId,...]
+        const nameToIds = {};
+        // 経路探索用グラフ（無向）：junctionId → Set<junctionId>
+        const adjacency = {};
+
+        // 下地・ノード情報の構築
+        for (const targetId of targetIds) {
+          const airway = data?.airway?.airways?.find(a => a.airwayId === targetId);
+          if (!airway) continue;
+
+          // JunctionId → [lat, lng] と name → ids
+          airway.airwayJunctions.forEach(j => {
+            const coords = j.airways?.[0]?.airway?.geometry?.coordinates;
+            if (Array.isArray(coords) && coords.length >= 4) {
+              if (!junctionLatLngMap[j.airwayJunctionId]) {
+                junctionLatLngMap[j.airwayJunctionId] = centerFromRect(coords);
+              }
+              if (j.airwayJunctionName) {
+                if (!nameToIds[j.airwayJunctionName]) nameToIds[j.airwayJunctionName] = [];
+                if (!nameToIds[j.airwayJunctionName].includes(j.airwayJunctionId)) {
+                  nameToIds[j.airwayJunctionName].push(j.airwayJunctionId);
+                }
+              }
+            }
+          });
+
+          // baseSegments と adjacency（両端の座標があるエッジのみ追加）
+          airway.airwaySections.forEach(sec => {
+            const [j1, j2] = sec.airwayJunctionIds || [];
+            const p1 = junctionLatLngMap[j1];
+            const p2 = junctionLatLngMap[j2];
+            if (p1 && p2) {
+              baseSegments.push([p1, p2]);
+              if (!adjacency[j1]) adjacency[j1] = new Set();
+              if (!adjacency[j2]) adjacency[j2] = new Set();
+              adjacency[j1].add(j2);
+              adjacency[j2].add(j1);
+            }
+          });
+        }
+
+        // ユーザーが選択した航路点名の順に、隣接ペアごとに最短経路を探索し segments を構成
+        let globalStartCoord = null;
+        let globalEndCoord = null;
+
+        const waypoints = useIdWaypoints ? waypointIds : waypointNames;
+              
+        for (let i = 0; i < waypoints.length - 1; i++) {
+          let startIds = [];
+          let endIds = [];
+        
+          if (useIdWaypoints) {
+            startIds = [String(waypoints[i])];
+            endIds   = [String(waypoints[i + 1])];
+          } else {
+            const startName = waypoints[i];
+            const endName   = waypoints[i + 1];
+            startIds = nameToIds[startName] || [];
+            endIds   = nameToIds[endName] || [];
           }
-          count += 1;
-        });
+        
+          // 候補の全組合せで最短経路を探索（ID指定時は実質1通り）
+          let bestPathIds = null;
+          for (const sId of startIds) {
+            for (const eId of endIds) {
+              const pathIds = bfsPath(sId, eId, adjacency);
+              if (pathIds && pathIds.length >= 2) {
+                if (!bestPathIds || pathIds.length < bestPathIds.length) {
+                  bestPathIds = pathIds;
+                }
+              }
+            }
+          }
 
-        if (polyline.length > 0) {
-          L.polyline(polyline, {
-            color: 'black',
-            weight: 12,
-            opacity: 1,
-          }).addTo(map.value);
+          if (bestPathIds) {
+            // junctionId列 → 連続する座標線分に変換
+            for (let k = 0; k < bestPathIds.length - 1; k++) {
+              const a = junctionLatLngMap[bestPathIds[k]];
+              const b = junctionLatLngMap[bestPathIds[k + 1]];
+              if (a && b) selectedSolidSegments.push([a, b]);
+            }
+            if (!globalStartCoord) globalStartCoord = junctionLatLngMap[bestPathIds[0]];
+            globalEndCoord = junctionLatLngMap[bestPathIds[bestPathIds.length - 1]];
+          } else {
+            // 実在しない（つながらない）場合は点線で補間
+            const sCoord = (startIds.map(id => junctionLatLngMap[id]).find(Boolean)) || null;
+            const eCoord = (endIds.map(id => junctionLatLngMap[id]).find(Boolean)) || null;
+            if (sCoord && eCoord) {
+              selectedDashedSegments.push([sCoord, eCoord]);
+              if (!globalStartCoord) globalStartCoord = sCoord;
+              globalEndCoord = eCoord;
+            }
+          }
+        }
 
-          L.polyline(polyline, {
-            color: 'white',
-            weight: 10,
-            opacity: 1,
-          }).addTo(map.value);
+        // 下地（存在する全区間）を描画
+        if (baseSegments.length > 0) {
+          // 太い黒→白で上書き
+          L.polyline(baseSegments, { color: 'black', weight: 12, opacity: 1 }).addTo(map.value);
+          L.polyline(baseSegments, { color: 'white', weight: 10, opacity: 1 }).addTo(map.value);
+        }
 
-          L.polyline(blackLine, {
+        // 選択経路：実在区間は実線、欠落区間は点線
+        if (selectedSolidSegments.length > 0) {
+          L.polyline(selectedSolidSegments, { color: 'black', weight: 5, opacity: 1 }).addTo(map.value);
+        }
+        if (selectedDashedSegments.length > 0) {
+          L.polyline(selectedDashedSegments, {
             color: 'black',
             weight: 5,
             opacity: 1,
+            dashArray: '6 6',
+            lineCap: 'butt'
           }).addTo(map.value);
         }
 
-        polyline.forEach((coord) => {
-          if (coord[1] !== undefined && coord[0] !== undefined) {
-            L.circleMarker([coord[0], coord[1]], {
+        // 航路点の目印（任意）：下地の端点を重複排除して描画
+        {
+          const endpoints = baseSegments.flat();
+          const uniq = [];
+          const keySet = new Set();
+          for (const p of endpoints) {
+            const key = `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+            if (!keySet.has(key)) {
+              keySet.add(key);
+              uniq.push(p);
+            }
+          }
+          uniq.forEach(coord => {
+            L.circleMarker(coord, {
               radius: 5,
               color: 'black',
               fill: true,
               fillColor: 'white',
               fillOpacity: 0.6,
             }).addTo(map.value);
-          }
-        });
+          });
+        }
 
+        // スタート/ゴール マーカー（ユーザー順の全経路から決定）
         if (props.showMarker) {
-          if (props.isEndIdFirst) {
-            var startIcon = L.icon({
-              iconUrl: goaliconUrl,
-              iconSize: [35, 35],
-              iconAnchor: [17, 36],
-            });
-            var goalIcon = L.icon({
-              iconUrl: starticonUrl,
-              iconSize: [35, 35],
-              iconAnchor: [17, 36],
-            });
-            }else{
-            var startIcon = L.icon({
-              iconUrl: starticonUrl,
-              iconSize: [35, 35],
-              iconAnchor: [17, 36],
-            });
-            var goalIcon = L.icon({
-              iconUrl: goaliconUrl,
-              iconSize: [35, 35],
-              iconAnchor: [17, 36],
-            });
+          const startCoord = globalStartCoord;
+          const endCoord   = globalEndCoord;
+
+          if (startCoord && endCoord) {
+            let startIcon, goalIcon;
+            if (props.isEndIdFirst) {
+              startIcon = L.icon({ iconUrl: goaliconUrl,  iconSize: [35, 35], iconAnchor: [17, 36] });
+              goalIcon  = L.icon({ iconUrl: starticonUrl, iconSize: [35, 35], iconAnchor: [17, 36] });
+            } else {
+              startIcon = L.icon({ iconUrl: starticonUrl, iconSize: [35, 35], iconAnchor: [17, 36] });
+              goalIcon  = L.icon({ iconUrl: goaliconUrl,  iconSize: [35, 35], iconAnchor: [17, 36] });
             }
-          for (let i = 0; i < blackLine.length; i++) {
-            if (i == 0) {
-              L.marker(blackLine[i], { icon: startIcon }).addTo(map.value);
-            } else if (i == blackLine.length - 1) {
-              L.marker(blackLine[i], { icon: goalIcon }).addTo(map.value);
-            }
+            L.marker(startCoord, { icon: startIcon }).addTo(map.value);
+            L.marker(endCoord,   { icon: goalIcon  }).addTo(map.value);
           }
         }
 
+        // 出発・到着ポートは従来通り
         if (props.departurePort) {
           const portIcon = L.icon({ iconUrl: porticonUrl, iconSize: [15, 15] });
           L.marker(props.departurePort, { icon: portIcon, type: 'departurePort' }).addTo(map.value);
@@ -287,14 +339,23 @@ export default {
           L.marker(props.arrivalPort, { icon: portIcon, type: 'arrivalPort' }).addTo(map.value);
         }
 
-        if (polyline.length > 0) {
-          map.value.fitBounds(polyline);
+        // 表示範囲調整（下地＋選択経路すべて）
+        {
+          const boundsLatLngs = []
+            .concat(...baseSegments)
+            .concat(...selectedSolidSegments)
+            .concat(...selectedDashedSegments);
+          if (boundsLatLngs.length > 0) {
+            map.value.fitBounds(boundsLatLngs);
+          }
         }
+
+        // ── ここまで置き換え ──
       }
     };
 
     onMounted(async () => {
-      renderMap(props.chartData, props.section, props.airwayId);
+      renderMap(props.chartData, props.airwayId, props.sectionList);
     });
 
     return { map, map_moveend, MapLayerControlMounted, changedId };
