@@ -85,17 +85,6 @@
       </div>
       <div class="option-container">
         <div class="option-item">
-          <div class="e-fieldLabel-option">事業所・会社名</div>
-          <ul class="horizontal-list">
-                <li>
-                <select v-model="companyName" class="e-textField-select">
-                <option value="" selected hidden>-- 事業所・会社名称 --</option>
-                <option v-for="item in companyNameItems" :key="item" :value="item">{{ item }}</option>
-                </select>
-                </li>
-          </ul>
-        </div>
-        <div class="option-item">
           <div class="e-fieldLabel-select">エリア</div>
           <ul class="horizontal-list">
                 <li>
@@ -115,113 +104,105 @@
       </div>
     </div>
 
+    <!-- スピナー：reservationLoading 中 -->
+    <div v-if="reservationLoading" class="drn_spinner__area">
+      <v-progress-circular indeterminate color="primary" size="64" />
+      <p class="drn_spinner__text">予約データを読み込み中…</p>
+    </div>
+
     <!-- テーブル -->
-    <v-card-text v-if="viewType == 'listview'" class="drn_content">
+    <v-card-text v-if="!reservationLoading && viewType == 'listview'" class="drn_content">
       <div class="drn_content__body">
       <v-sheet class="drn_content__data">
       <div class="drn_list">
       <div class="drn_list__body">
-        <v-data-table
-          v-model:items-per-page="itemsPerPage"
-          :page.sync="page"
-          @update:page="onPageChange"
-          :headers="headers"
-          :items="filteredRoutes"
-          item-value="id"
-          item-key="id"
-          fixed-header
-          fixed-footer
-          density="comfortable"
-          class="drn_list__table"
-          @update:selected-items="selectRoute"
-          @update:sort-by="updateSort"
-          :sort-key.sync="sortKey"
-          :sort-order.sync="sortOrder"
-          @update:currentItems="onUpdateCurrentItems"
-          :items-per-page-options="[5, 10, 15, 20]"
-        >
-        <template v-slot:body="{ items }">
-          <tr
-            v-for="(item, index) in items"
-            :key="item.id"
-            :class="{'drn_table__selected': selectedRow === item.id }"
-            @click="selectRoute(item.id, item.airwayId, item.section)"
-          >
-            <td :class="{'drn_table__selected_first_td': selectedRow === item.id }">
-              <div :class="{'change-color-airwaystatus': item.reservationStatus === '予約済み', 'change-color-evaluation-airwaystatus': item.reservationStatus !== '予約済み'}">
-                {{ item.reservationStatus }}
-              </div>
-            </td>
-            <td>{{ item.startDay }}</td>
-            <td>{{ item.endDay }}</td>
-            <td>{{ item.reservationNumber }}</td>
-            <td>{{ item.route }}</td>
-            <td>{{ item.section }}</td>
-            <td>{{ item.reservationDay }}</td>
-            <td>
-              <router-link
-                :to="{ 
-                  path: '/airwayReservation/detail',
-                  query: {
-                    id: item.id,
-                    airwayId: item.airwayId,
-                    operatorId: item.operatorId,
-                    reservationNumber: item.reservationNumber,
-                    reservationStatus: item.reservationStatus,
-                    rawReservationStatus: item.rawReservationStatus,
-                    reservationDay: item.reservationDay,
-                    route: item.name,
-                    section: item.section,
-                    purpose: item.purpose,
-                    startDay: item.startDay,
-                    endDay: item.endDay
-                  },
-                }"
+        <div class="drn_native_table_wrap">
+          <table class="drn_native_table">
+            <thead>
+              <tr>
+                <th v-for="h in headers" :key="h.key" class="drn_native_th" @click="h.sortable ? setSortKey(h.key) : undefined" :style="h.sortable ? 'cursor:pointer' : ''">
+                  {{ h.title }}<span v-if="h.sortable"> {{ sortKey === h.key ? (sortAsc ? '▲' : '▼') : '⇅' }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in pagedRoutes"
+                :key="item.id"
+                :class="{'drn_table__selected': selectedRow === item.id }"
+                @click="selectRoute(item.id, item.airwayId, item.section, item.airwaySectionId, item.startJunctionId, item.endJunctionId)"
               >
-                <img class="drn_table__detail_icon" src="/assets/css/img/main/circle-info-solid.svg" width="20" height="20">  
-              </router-link>
-            </td>
-          </tr>
-        </template>       
-        </v-data-table>
+                <td :class="{'drn_table__selected_first_td': selectedRow === item.id }" style="text-align:center">
+                  <div :class="{'change-color-airwaystatus': item.reservationStatus === '予約済み', 'change-color-evaluation-airwaystatus': item.reservationStatus !== '予約済み'}">
+                    {{ item.reservationStatus }}
+                  </div>
+                </td>
+                <td>{{ item.startDay }}</td>
+                <td>{{ item.endDay }}</td>
+                <td>{{ item.reservationNumber }}</td>
+                <td>{{ item.route }}</td>
+                <td>{{ item.section }}</td>
+                <td>{{ item.reservationDay }}</td>
+                <td>
+                  <span class="drn_detail_btn" :class="{'drn_detail_btn--loading': airwayDataLoading}" @click.stop="airwayDataLoading ? undefined : openDetail(item)">
+                    <img class="drn_table__detail_icon" src="/assets/css/img/main/circle-info-solid.svg" width="20" height="20">
+                    <span v-if="airwayDataLoading" class="drn_detail_btn__forbidden">⊝</span>
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- ページネーション -->
+        <div class="drn_pagination">
+          <div class="drn_pagination__per_page">
+            <label>表示件数：
+              <select v-model.number="itemsPerPage" @change="page = 1">
+                <option v-for="n in [5,10,15,20]" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="drn_pagination__info">{{ paginationInfo }}</div>
+          <div class="drn_pagination__controls">
+            <button class="drn_pager_btn" :disabled="page <= 1" @click="page = 1">«</button>
+            <button class="drn_pager_btn" :disabled="page <= 1" @click="page--">‹</button>
+            <button
+              v-for="p in pageNumbers"
+              :key="p"
+              class="drn_pager_btn"
+              :class="{'drn_pager_btn--active': p === page}"
+              @click="page = p"
+            >{{ p }}</button>
+            <button class="drn_pager_btn" :disabled="page >= totalPages" @click="page++">›</button>
+            <button class="drn_pager_btn" :disabled="page >= totalPages" @click="page = totalPages">»</button>
+          </div>
+        </div>
       </div>
       </div>
       </v-sheet>
       </div>
     </v-card-text>
     <!-- 地図表示 -->
-    <v-card-text v-if="viewType == 'mapview'" class="drn_content">
+    <v-card-text v-if="!reservationLoading && viewType == 'mapview'" class="drn_content">
       <div class="drn_content__body">
       <v-sheet class="drn_content__data">
       <div class="drn_list">
       <div class="drn_list__body">
-        <v-data-table
-          v-model:items-per-page="itemsPerPage"
-          :headers="previewHeaders"
-          :page.sync="page"
-          @update:page="onPageChange"
-          :items="filteredRoutes"
-          item-value="id"
-          item-key="id"
-          fixed-header
-          fixed-footer
-          density="comfortable"
-          class="drn_list__table"
-          @update:selected-items="selectRoute"
-          @sort-by="updateSort"
-          :sort-key.sync="sortKey"
-          :sort-order.sync="sortOrder"
-          @update:currentItems="onUpdateCurrentItems"
-          :items-per-page-options="[5, 10, 15, 20]"
-          >
-            <template v-slot:body="{ items }">
+        <div class="drn_native_table_wrap">
+          <table class="drn_native_table">
+            <thead>
+              <tr>
+                <th v-for="h in previewHeaders" :key="h.key" class="drn_native_th">{{ h.title }}</th>
+              </tr>
+            </thead>
+            <tbody>
               <tr
-              v-for="(item, index) in items"
-              :key="item.id"
-              :class="{'drn_table__selected': selectedRow === item.id }"
-              @click="selectRoute(item.id, item.airwayId, item.section)"
+                v-for="item in pagedRoutes"
+                :key="item.id"
+                :class="{'drn_table__selected': selectedRow === item.id }"
+                @click="selectRoute(item.id, item.airwayId, item.section, item.airwaySectionId, item.startJunctionId, item.endJunctionId)"
               >
-                <td :class="{'drn_table__selected_first_td': selectedRow === item.id }">
+                <td :class="{'drn_table__selected_first_td': selectedRow === item.id }" style="text-align:center">
                   <div :class="{'change-color-airwaystatus': item.reservationStatus === '予約済み', 'change-color-evaluation-airwaystatus': item.reservationStatus !== '予約済み'}">
                     {{ item.reservationStatus }}
                   </div>
@@ -229,31 +210,39 @@
                 <td>{{ item.route }}</td>
                 <td>{{ item.section }}</td>
                 <td>
-                  <router-link
-                    :to="{ 
-                      path: '/airwayReservation/detail',
-                      query: {
-                        id: item.id,
-                        airwayId: item.airwayId,
-                        operatorId: item.operatorId,
-                        reservationNumber: item.reservationNumber,
-                        reservationStatus: item.reservationStatus,
-                        rawReservationStatus: item.rawReservationStatus,
-                        reservationDay: item.reservationDay,
-                        route: item.name,
-                        section: item.section,
-                        purpose: item.purpose,
-                        startDay: item.startDay,
-                        endDay: item.endDay
-                      },
-                    }"
-                  >
-                    <img class="drn_table__detail_icon" src="/assets/css/img/main/circle-info-solid.svg" width="20" height="20">  
-                  </router-link>
+                  <span class="drn_detail_btn" :class="{'drn_detail_btn--loading': airwayDataLoading}" @click.stop="airwayDataLoading ? undefined : openDetail(item)">
+                    <img class="drn_table__detail_icon" src="/assets/css/img/main/circle-info-solid.svg" width="20" height="20">
+                    <span v-if="airwayDataLoading" class="drn_detail_btn__forbidden">⊝</span>
+                  </span>
                 </td>
               </tr>
-            </template>
-        </v-data-table>
+            </tbody>
+          </table>
+        </div>
+        <!-- ページネーション (mapview) -->
+        <div class="drn_pagination">
+          <div class="drn_pagination__per_page">
+            <label>表示件数：
+              <select v-model.number="itemsPerPage" @change="page = 1">
+                <option v-for="n in [5,10,15,20]" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="drn_pagination__info">{{ paginationInfo }}</div>
+          <div class="drn_pagination__controls">
+            <button class="drn_pager_btn" :disabled="page <= 1" @click="page = 1">«</button>
+            <button class="drn_pager_btn" :disabled="page <= 1" @click="page--">‹</button>
+            <button
+              v-for="p in pageNumbers"
+              :key="p"
+              class="drn_pager_btn"
+              :class="{'drn_pager_btn--active': p === page}"
+              @click="page = p"
+            >{{ p }}</button>
+            <button class="drn_pager_btn" :disabled="page >= totalPages" @click="page++">›</button>
+            <button class="drn_pager_btn" :disabled="page >= totalPages" @click="page = totalPages">»</button>
+          </div>
+        </div>
       </div>
       </div>
       </v-sheet>
@@ -263,13 +252,24 @@
           :chartData="airwayData"
           :section="selectedSection"
           :airwayId="selectedAirwayId"
+          :airwaySectionId="selectedAirwaySectionId"
           :showCheckBox=true
           :showLegend=true
           :showMarker=false
+          :startJunctionId="startJunctionId"
+          :endJunctionId="endJunctionId"
         />
       </v-sheet>
       </div>
     </v-card-text>
+  </div>
+</div>
+
+<!-- データ取得中ガードモーダル -->
+<div v-if="showLoadingModal" class="drn_loading_guard__overlay" @click="showLoadingModal = false">
+  <div class="drn_loading_guard" @click.stop>
+    <p class="drn_loading_guard__msg">データ取得中のため、この操作はできません</p>
+    <button class="drn_loading_guard__close" @click="showLoadingModal = false">閉じる</button>
   </div>
 </div>
 </template>
@@ -288,7 +288,20 @@
     },
     airwayData: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({ airway: { airways: [] } })
+    },
+    airwayDataLoading: {
+      type: Boolean,
+      default: true
+    },
+    reservationLoading: {
+      type: Boolean,
+      default: true
+    },
+    ownDataReady: {
+      type: Boolean,
+      default: false
     },
   },
   data() {
@@ -307,19 +320,21 @@
 
       selectedRow: null,
       selectedAirwayId: '', 
-      selectedSection: '', 
+      selectedSection: '',
+      selectedAirwaySectionId: [],
+      startJunctionId: '',
+      endJunctionId: '',
       itemsPerPage: 20,
-      sortKey: '', // ソートキー
-      sortOrder: 1, // 1: 昇順, -1: 降順
-      page: 1,  // 現在のページ番号
+      sortKey: '',
+      sortAsc: true,
+      page: 1,
       showPopup: false,
+      showLoadingModal: false,
       purposes: ["物資運搬","送電線点検","河川監視","山岳監視","航空撮影","その他"],
       startDate: '',
       endDate: '',
       area: '',
       areaitems: [],
-      companyName: '',
-      companyNameItems: [],
       filteredRoutes: [],
       falltrangeData: null,
       operatorData: null,
@@ -329,28 +344,109 @@
       reservation_airwayIds: [],
       viewType: 'listview',
       currentItems: [],
+      portData: null,
     };
   },
   computed: {
     previewHeaders() {
-      // プレビューモードの場合、表示するヘッダーを制限する
       if (this.viewType === 'mapview') {
-        return this.headers.filter(header => ['reservationStatus', 'route', 'section', 'details'].includes(header.key));
+        return this.headers.filter(header => ['reservationStatus', 'route', 'section', 'details'].includes(header.key))
       }
-      return this.headers;
+      return this.headers
     },
-    async routes() {
+    sortedRoutes() {
+      if (!this.sortKey) return this.filteredRoutes
+      const key = this.sortKey
+      const asc = this.sortAsc
+      return [...this.filteredRoutes].sort((a, b) => {
+        const av = a[key] ?? ''
+        const bv = b[key] ?? ''
+        if (av < bv) return asc ? -1 : 1
+        if (av > bv) return asc ? 1 : -1
+        return 0
+      })
+    },
+    totalPages() {
+      return Math.max(1, Math.ceil(this.sortedRoutes.length / this.itemsPerPage))
+    },
+    pagedRoutes() {
+      const start = (this.page - 1) * this.itemsPerPage
+      return this.sortedRoutes.slice(start, start + this.itemsPerPage)
+    },
+    paginationInfo() {
+      const total = this.sortedRoutes.length
+      if (total === 0) return '0 件'
+      const start = (this.page - 1) * this.itemsPerPage + 1
+      const end = Math.min(this.page * this.itemsPerPage, total)
+      return `${start} - ${end} / ${total} 件`
+    },
+    pageNumbers() {
+      const total = this.totalPages
+      const cur = this.page
+      const delta = 2
+      const pages = []
+      for (let i = Math.max(1, cur - delta); i <= Math.min(total, cur + delta); i++) {
+        pages.push(i)
+      }
+      return pages
+    },
+    isListView() {
+      return this.viewType === 'listview'
+    },
+  },
+  watch: {
+    async airwayData(newVal) {
+      if (!newVal?.airway?.airways?.length) return;
+      if (!this.portData) {
+        const centerFromRect = (coords) => {
+          const n = Math.min(coords.length, 4);
+          let lat = 0, lng = 0;
+          for (let i = 0; i < n; i++) { lat += coords[i][1]; lng += coords[i][0]; }
+          return [lat / n, lng / n];
+        };
+        const portIds = [...new Set(this.reservationData.result.map(r => r.ports.map(p => p.portId)).flat(Infinity))];
+        const fileredData = newVal.airway.airways
+          .map(m => ({ airwayJunctions: m?.airwayJunctions?.find(j => j?.airways) }))
+          .find(a => a?.airwayJunctions)?.airwayJunctions?.airways;
+        if (fileredData) {
+          const coordinate = centerFromRect(fileredData[0].airway.geometry.coordinates);
+          const portSearchRadius = parseInt(useRuntimeConfig().public.semanticSearchRadiusMeters) || 20000;
+          try {
+            this.portData = await searchPorts(portIds, coordinate[0], coordinate[1], portSearchRadius, true);
+          } catch (error) {
+            console.error(`error: get droneport info: ${error.message}`, error);
+          }
+        }
+      }
+      this.filteredRoutes = await this.buildRoutes();
+    },
+    async airwayDataLoading(newVal) {
+      // Stage3完了時（falseに変化時）に再構築して「データ取得中」を觧履简決
+      if (!newVal) {
+        this.filteredRoutes = await this.buildRoutes();
+      }
+    },
+    async reservationData(newVal) {
+      if (!newVal?.result?.length) return;
+      this.filteredRoutes = await this.buildRoutes();
+    },
+  },
+  methods: {
+    async buildRoutes() {
+      // 予約データがまだ空なら何もしない
+      if (!this.reservationData?.result?.length) return [];
       const reservationList = [];
 
       // 最大許容落下範囲情報取得
-      const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-      const falltrangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-      const falltrangeRes = await axios_get(falltrangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+      const falltrangeRes = await $fetch('/api/airway/max-fall-range', { 
+        method: 'GET',
+        query: { businessNumber: useRuntimeConfig().public.businessNumber }
+      });
       this.falltrangeData = {};
-      this.falltrangeData = falltrangeRes.data;
+      this.falltrangeData = convertMaxFallRangeToFallToleranceRanges(falltrangeRes.data);
       // 地域一覧を取得
       const areajsonUrl = `/api/getAreaJsonData`;
-      const areadata = await axios_get(areajsonUrl);
+      const areadata = await $fetch(areajsonUrl);
       if (areadata.data != undefined) {
         // オプション検索で使用する地域一覧を作成
         this.areaitems = [];
@@ -366,7 +462,8 @@
       }
       console.log(`areaitems: ${this.areaitems}`);
 
-      // 事業者一覧取得
+      // /operator廃止につき事業者一覧取得は展進しない
+      /* ★ GET /operator 廃止：暫定対応（取得部コメント化）
       const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
       const operatorUrl = `${miscApiBaseUrl}/operator`;
       const operatorRes = await axios_get(operatorUrl);
@@ -411,57 +508,249 @@
         }
         console.log(`reservation_airwayIds: ${this.reservation_airwayIds}`);
       }
+      */
+      const LOADING = 'データ取得中';
       let id = 1;
       if(!("result" in this.reservationData)){
         return reservationList;
       }
       this.reservationData['result'].forEach((reservation) => {
         let airwaySections = []
+        let reservationIds = []
         for(let i=0; i<reservation['airwaySections'].length; i++){
           airwaySections.push(reservation['airwaySections'][i]['airwaySectionId']);
+          reservationIds.push(reservation['airwaySections'][i]['reservationId'])
         }
-        let airwayId = useAirwayGetAirwayIdFromSectionId(this.airwayData, reservation['airwaySections'][0]['airwaySectionId']) // 予約に含まれる航路区画IDをもとに航路IDを特定
-        if (this.role == 3 && this.reservation_airwayIds.includes(airwayId) == false) {
-          // 関係者でログインしている場合、自身に関係する航路IDでなければ表示しない
-          return;
-        }
+        let airwayIds = []
+        airwaySections.forEach((airwaySection) => {
+          airwayIds.push(useAirwayGetAirwayIdFromSectionId(this.airwayData, airwaySection)) // 予約に含まれる航路区画IDをもとに航路IDを特定
+        });
+        
         const rawReservationStatus = reservation['status'];
+        let route = []
+        // let name = []
+        let area = []
+        let purpose = []
+        airwayIds.forEach((airwayId) => {
+          const rName = useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId);
+          route.push(this.airwayDataLoading && rName === 'Not found.' ? LOADING : rName)
+          // name.push(useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId))
+          area.push(getareaName(this.falltrangeData, airwayId))
+          purpose.push(useAirwayGetPurposeFromAirwayId(this.airwayData, airwayId))
+        })
+        // let juncs = []
+        // reservation['airwaySections'].forEach((section) => {
+        //   let s = [section]
+        //   juncs.push(useAirwayGetCorridorPointRangeFromSectionIdList(this.airwayData, s))
+        // })
+
+        
+        // 指定航路区画の航路点情報取得
+        const getAirwayJunctions = (airwaySectionId) => {
+          const [juncitons] =
+            this.airwayData.airway.airways
+                  .filter(airway => airway.airwaySections.some(section => section.airwaySectionId == airwaySectionId))
+                  .map(airway => (
+                      airway.airwayJunctions
+                        .filter(junction => airway.airwaySections.find(section => section.airwaySectionId == airwaySectionId)
+                        .airwayJunctionIds.includes(junction.airwayJunctionId)) )
+                  );
+          return juncitons ?? [];
+        };
+        // 離着陸場に最寄りの航路点名を取得
+        const getNearestJunctionNameToPort = (portId, junctions) => {
+          const [targetPort] = this.portData?.data?.filter(d => d?.dronePortId == portId) ?? [];
+          const range = [];
+
+          // 対象ポートが存在しない場合は null を返却
+          if(!targetPort) return null;
+
+          // 航路点毎に指定ポートとの直線距離を算出
+          junctions.forEach((junction) => {
+            let points = junction.airways[0].airway.geometry.coordinates;
+            let arr = points;
+
+            const [x1, y1] = points[0];
+            const [xN, yN] = points[points.length - 1];
+            const eps = 1e-12;
+            if (Math.abs(x1 - xN) < eps && Math.abs(y1 - yN) < eps) {
+              arr = points.slice(0, -1);
+            }
+
+            let sumX = 0, sumY = 0, n = 0;
+            for (const p of arr) {
+              if (!Array.isArray(p) || p.length < 2) continue;
+              sumX += p[0];
+              sumY += p[1];
+              n++;
+            }
+            if (n === 0) return;
+            // 名前と直線距離を格納
+            range.push([junction.name, Math.hypot(sumX / n - targetPort.lon, sumY / n - targetPort.lat)]);
+          });
+          return range.length ? range.reduce((min, e) => (Number(e[1]) < Number(min[1]) ? e : min))[0] : null;
+        };
+
+        // 離着陸場に最寄りの航路点IDを取得
+        const getNearestJunctionIdToPort = (portId, junctions) => {
+          const [targetPort] = this.portData?.data?.filter(d => d?.dronePortId == portId) ?? [];
+          const range = [];
+          if(!targetPort) return null;
+
+          junctions.forEach((junction) => {
+            let points = junction.airways[0].airway.geometry.coordinates;
+            let arr = points;
+
+            const [x1, y1] = points[0];
+            const [xN, yN] = points[points.length - 1];
+            const eps = 1e-12;
+            if (Math.abs(x1 - xN) < eps && Math.abs(y1 - yN) < eps) {
+              arr = points.slice(0, -1);
+            }
+
+            let sumX = 0, sumY = 0, n = 0;
+            for (const p of arr) {
+              if (!Array.isArray(p) || p.length < 2) continue;
+              sumX += p[0];
+              sumY += p[1];
+              n++;
+            }
+            if (n === 0) return;
+
+            // nameではなく id を保持
+            range.push([junction.airwayJunctionId, Math.hypot(sumX / n - targetPort.lon, sumY / n - targetPort.lat)]);
+          });
+
+          return range.length ? range.reduce((min, e) => (Number(e[1]) < Number(min[1]) ? e : min))[0] : null;
+        };
+
+        let section = "Not found"
+        let startJunctionId = '';
+        let endJunctionId = '';
+        const sectionCount = reservation?.airwaySections?.length ?? 0;
+
+        if(sectionCount == 1) {   // １区画のみの場合
+          if(reservation?.ports?.length > 1) {
+            // 離着陸場予約あり：離着陸場に一番近い航路点を取得
+            const juntions = getAirwayJunctions(reservation.airwaySections[0].airwaySectionId);
+            section =
+              (getNearestJunctionNameToPort(reservation.ports[0]?.portId, juntions) ?? juntions[0]?.name ?? 'Not found') + ' ~ ' +
+              (getNearestJunctionNameToPort(reservation.ports[1]?.portId, juntions) ?? juntions[1]?.name ?? 'Not found');
+
+            startJunctionId = (getNearestJunctionIdToPort(reservation.ports[0]?.portId, juntions) ?? juntions[0]?.airwayJunctionId ?? '');
+            endJunctionId   = (getNearestJunctionIdToPort(reservation.ports[1]?.portId, juntions) ?? juntions[1]?.airwayJunctionId ?? juntions[juntions.length - 1]?.airwayJunctionId ?? '');
+
+          } else {
+            // 離着陸場予約なし：配列格納順で航路点を取得
+            const js = getAirwayJunctions(reservation.airwaySections[0].airwaySectionId);
+
+            section = js?.length ? js.map(j => j.name).join(' ~ ') : 'Not found';
+
+            startJunctionId = js[0]?.airwayJunctionId ?? '';
+            endJunctionId   = js[js.length - 1]?.airwayJunctionId ?? '';
+          }
+        } else
+        if(sectionCount > 1) {    // 複数区画ありの場合
+          // セクション名取得
+          const getJunctionName = (isStart) => {
+            const firstIndex = isStart ? 0 : reservation.airwaySections.length - 1;
+            const secondIndex = firstIndex + (isStart ? 1 : -1);
+
+            const firstJunctions = getAirwayJunctions(reservation.airwaySections[firstIndex].airwaySectionId);
+            const secondJunctions = getAirwayJunctions(reservation.airwaySections[secondIndex].airwaySectionId);
+
+            // 前後の区間に重複する航路点を除く
+            const junctions = firstJunctions?.filter(j => !secondJunctions.map(m => m?.airwayJunctionId).includes(j.airwayJunctionId))
+
+            if(!junctions?.length) {
+              return "Not found";
+            } else if(junctions.length == 1) {
+              return junctions[0]?.name;
+            } else {
+              if(reservation?.ports?.length > 1) {
+                // 離着陸場予約あり：離着陸場に一番近い航路点を取得
+                return getNearestJunctionNameToPort(reservation.ports[+!isStart]?.portId, firstJunctions) ?? firstJunctions[+!isStart]?.name ?? 'Not found';
+              } else {
+                // 離着陸場予約なし：配列格納順で航路点を取得
+                return firstJunctions[+!isStart]?.name ?? 'Not found';
+              }
+            }
+          }
+          const getStartJunction = () => getJunctionName(true);
+          const getEndJunction = () => getJunctionName(false);
+
+          // 区間名取得
+          section = getStartJunction() + ' ~ ' + getEndJunction();
+
+          const getJunctionId = (isStart) => {
+            const firstIndex = isStart ? 0 : reservation.airwaySections.length - 1;
+            const secondIndex = firstIndex + (isStart ? 1 : -1);
+  
+            const firstJunctions = getAirwayJunctions(reservation.airwaySections[firstIndex].airwaySectionId);
+            const secondJunctions = getAirwayJunctions(reservation.airwaySections[secondIndex].airwaySectionId);
+  
+            const junctions = firstJunctions?.filter(j => !secondJunctions.map(m => m?.airwayJunctionId).includes(j.airwayJunctionId));
+  
+            if(!junctions?.length) {
+              return '';
+            } else if(junctions.length == 1) {
+              return junctions[0]?.airwayJunctionId ?? '';
+            } else {
+              if(reservation?.ports?.length > 1) {
+                return (getNearestJunctionIdToPort(reservation.ports[+!isStart]?.portId, firstJunctions) ?? firstJunctions[+!isStart]?.airwayJunctionId ?? '');
+              } else {
+                return firstJunctions[+!isStart]?.airwayJunctionId ?? '';
+              }
+            }
+          };
+  
+          startJunctionId = getJunctionId(true);
+          endJunctionId = getJunctionId(false);
+        }
+
+        // airwayData 未取得・ロード中の場合は "データ取得中" を表示
+        if (this.airwayDataLoading && (section === 'Not found' || section.includes('Not found'))) {
+          section = LOADING;
+        }
+
         let element = {
           id: reservation['airwayReservationId'],
-          airwayId: airwayId,
+          airwayId: airwayIds,
           operatorId: reservation['operatorId'],
-          reservationStatus: this.convertReservationStatus(rawReservationStatus),
+          // 適合性確認改修 start
+          evaluationResults: reservation['evaluationResults'],
+          reservationStatus: reservation['evaluationResults'] ? this.convertReservationStatus(rawReservationStatus) : reservation['evaluationStatus'],
+          // 適合性確認改修 end
           rawReservationStatus: rawReservationStatus,
           startDay: useDateString1(reservation['airwaySections'][0]['startAt']),
-          endDay: useDateString1(reservation['airwaySections'][0]['endAt']),
+          endDay: useDateString1(reservation['airwaySections'][reservation['airwaySections'].length-1]['endAt']),
           rawStartDay: reservation['airwaySections'][0]['startAt'],
-          rawEndDay: reservation['airwaySections'][0]['endAt'],
+          rawEndDay: reservation['airwaySections'][reservation['airwaySections'].length-1]['endAt'],
           reservationNumber: reservation['airwayReservationId'],
-          route: useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId),
-          section: useAirwayGetCorridorPointRangeFromSectionIdList(this.airwayData, reservation['airwaySections']),
+          route: [...new Set(route.map(s => s.trim()))].join(", "),
+          section: section,
           reservationDay: useDateString2(reservation['reservedAt']),
           updateDay: useDateString2(reservation['updatedAt']),
           details: '詳細',
-          name: useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId),
-          area: getareaName(this.falltrangeData, airwayId),
-          purpose: useAirwayGetPurposeFromAirwayId(this.airwayData, airwayId),
-          companyName: getcompanyName(this.operatorData, reservation['operatorId']),
-          airwaySectionId: airwaySections
+          name: route,
+          area: area,
+          purpose: purpose,
+          companyName: '',
+          airwaySectionId: airwaySections,
+          vehicleId: reservation.vehicles.map(v => v?.vehicleId).filter(id => id != null),
+          registrationId: reservation?.vehicles?.[0]?.aircraftInfo?.registrationId ?? "",
+          portFrom: reservation.ports[0]?.name,
+          portTo: reservation.ports[1]?.name,
+          reservationIds: reservationIds,
+          startJunctionId: startJunctionId,
+          endJunctionId: endJunctionId,
+          totalAmount: reservation.totalAmount,
         };
         reservationList.push(element);
         id++;
       }); 
       return reservationList;
     },
-    isListView() {
-      if (this.viewType == 'listview') {
-        return true;
-      } else {
-        return false;
-      }
-    }
-  },
-  methods: {
     convertReservationStatus(status) {
       switch(status) {
         case 'RESERVED':
@@ -500,34 +789,17 @@
         const matched = newestDataMap[route.id];
         if (matched) {
           // reservationStatus を notifyType に更新
+          
+          // 適合性確認改修 start
+          route.rawReservationStatus = matched.status;
           if (route.rawReservationStatus == 'CANCELED' || route.rawReservationStatus == 'RESCINDED') {
             route.reservationStatus = '　中止　';
           } else if(matched.evaluationResults === true){
               route.reservationStatus = '予約済み'
           }else{
-            let notifyType = '';
-            switch (matched.type) {
-              case "weather":
-                notifyType = "気象異常";
-                route.reservationStatus = notifyType;
-                break;
-              case "event":
-                notifyType = "規制イベント";
-                route.reservationStatus = notifyType;
-                break;
-              case "railway":
-                notifyType = "鉄道異常";
-                route.reservationStatus = notifyType;
-                break;
-              case "intrusion":
-                notifyType = "人立ち入り";
-                route.reservationStatus = notifyType;
-                break;
-              default:
-                break;
-            }
+            route.reservationStatus = matched.type;
           }
-
+          // 適合性確認改修 end
         }
       });
       //反映し終わったら空にしておく
@@ -537,16 +809,51 @@
       console.log(newPage);
       this.page = newPage;
     },
-    selectRoute(id, airwayId, section) {
+    selectRoute(id, airwayId, section, airwaySectionId, startJunctionId, endJunctionId) {
       this.selectedRow = this.selectedRow === id ? null : id;
       this.selectedAirwayId = airwayId;
       this.selectedSection = section;
+      this.selectedAirwaySectionId = airwaySectionId;
+      this.startJunctionId = startJunctionId ?? '';
+      this.endJunctionId = endJunctionId ?? '';
       console.log("airwayId : " ,airwayId);
       console.log("section : ", section);
     },
-    async updateSort({ sortBy, sortDesc }) {
-        this.sortKey = sortBy; // ソートキーを更新
-        this.sortOrder = sortDesc ? 'desc' : 'asc'; // ソート順を更新
+    setSortKey(key) {
+      if (this.sortKey === key) {
+        this.sortAsc = !this.sortAsc;
+      } else {
+        this.sortKey = key;
+        this.sortAsc = true;
+      }
+    },
+    openDetail(item) {
+      if (!this.ownDataReady) {
+        this.showLoadingModal = true;
+        return;
+      }
+      // 予約詳細に必要なデータをセッションストレージに保存。
+      // 詳細ページは reservationNumber のみ受け取り、ここで保存したデータを使って表示する。
+      // airwayData は対象予約の航路IDのみ抽出して容量を抑制する。
+      try {
+        const airwayIdSet = new Set((item.airwayId ?? []).map(String));
+        const relevantAirways = (this.airwayData?.airway?.airways ?? [])
+          .filter(aw => airwayIdSet.has(String(aw.airwayId)));
+        const detailPayload = {
+          item,
+          airwayData: { airway: { airways: relevantAirways } },
+        };
+        sessionStorage.setItem(
+          `rsv:detail:${item.reservationNumber}`,
+          JSON.stringify(detailPayload)
+        );
+      } catch (e) {
+        console.warn('[openDetail] sessionStorage write failed:', e);
+      }
+      this.$router.push({
+        path: '/airwayReservation/detail',
+        query: { reservationNumber: item.reservationNumber },
+      });
     },
     togglePopup() {
         this.showPopup = !this.showPopup;
@@ -560,7 +867,7 @@
       if(this.endDate !== ''){
         end = new Date(useDateStringLocaltoUTC(this.endDate));
       }
-      const routes_filter = await this.routes;
+      const routes_filter = await this.buildRoutes();
       this.filteredRoutes = routes_filter.filter(item => {
         const itemStart = new Date(item.startDay);
         console.log(`itemStart: ${itemStart}`);
@@ -604,14 +911,9 @@
       this.viewType = 'mapview';
     },
     async onUpdateCurrentItems(items) {
+      // 適合性確認改修 start
       this.currentItems = items;
       console.log(this.currentItems);
-
-      const headers = {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      };
 
       const promises = [];
       for (let i = 0; i < this.currentItems.length; i++) {
@@ -621,71 +923,21 @@
           continue;
         }
 
-        // 予約と紐づく機体取得
-        const url = '/api/getAircraftInfoFrom?id=' + this.currentItems[i].raw.id;
-        const routeRequest = axios_get(url).then(async (response) => {
-          if (response.status !== 200 || response.data.aircraftInfo === null) {
-            this.currentItems[i].raw.reservationStatus = "取得失敗";
-            return;
-          }
+        // // 予約と紐づく機体取得
+        // const url = '/api/getAircraftInfoFrom?id=' + this.currentItems[i].raw.id;
+        // const routeRequest = axios_get(url).then(async (response) => {
+        //   if (response.status !== 200 || response.data.aircraftInfo === null) {
+        //     this.currentItems[i].raw.reservationStatus = "取得失敗";
+        //     return;
+        //   }
+        // });
 
-          // 適合性確認
-          const safetyApiBaseUrl = useRuntimeConfig().public.safetyApiBaseUrl;
-          const assessmentURL = `${safetyApiBaseUrl}/conformity-assessment`;
-          let errLevel = 0;
-          for (let airwaySectionIdIndex=0; airwaySectionIdIndex<this.currentItems[i].raw.airwaySectionId.length; airwaySectionIdIndex++){
-            const body = {
-              "airwaySectionId": this.currentItems[i].raw.airwaySectionId[airwaySectionIdIndex],
-              "startAt": this.currentItems[i].raw.rawStartDay,
-              "endAt": this.currentItems[i].raw.rawEndDay,
-              "aircraftInfo": {
-                "maker": response.data.aircraftInfo.maker,
-                "modelNumber": response.data.aircraftInfo.modelNumber,
-                "name": response.data.aircraftInfo.name,
-                "type": response.data.aircraftInfo.type,
-                "length": response.data.aircraftInfo.length,
-              }
-            };
-            const assessmentRes = await axios_post(assessmentURL, body, headers);
-            if (assessmentRes.status !== 200) {
-              this.currentItems[i].raw.reservationStatus = "取得失敗";
-              return;
-            }
-
-            if (assessmentRes.data.evaluationResults === 'true') {
-              this.currentItems[i].raw.reservationStatus = "予約済み";
-            } else {
-              let level = 0;
-              let notifyType = "";
-              switch (assessmentRes.data.type) {
-                case "weather":
-                  notifyType = "気象異常";
-                  break;
-                case "event":
-                  notifyType = "規制イベント";
-                  break;
-                case "railway":
-                  notifyType = "鉄道異常";
-                  break;
-                case "intrusion":
-                  notifyType = "人立ち入り";
-                  break;
-                default:
-                  notifyType = "取得失敗";
-                  break;
-              }
-              console.log(notifyType)
-              this.currentItems[i].raw.reservationStatus = notifyType;
-              return
-            }
-          }
-        });
-
-        promises.push(routeRequest);
+        // promises.push(routeRequest);
       }
 
-      // 全ての非同期リクエストが完了するのを待つ
-      await Promise.all(promises);
+      // // 全ての非同期リクエストが完了するのを待つ
+      // await Promise.all(promises);
+      // 適合性確認改修 end
     }
   },
   async created() {
@@ -713,7 +965,36 @@
           break;
       }
       console.log(`role:${this.role}`);
-      this.filteredRoutes = await this.routes;
+
+      // ヘルパー: ポリゴン(矩形)の中心を算出（最初の4点で平均）
+      const centerFromRect = (coords) => {
+        const n = Math.min(coords.length, 4);
+        let lat = 0, lng = 0;
+        for (let i = 0; i < n; i++) {
+          lat += coords[i][1]; // lat
+          lng += coords[i][0]; // lng
+        }
+        return [lat / n, lng / n]; // Leafletは [lat, lng]
+      };
+
+      // ドローンポート情報取得
+      const portIds = [...new Set(this.reservationData.result.map(r => r.ports.map(p => p.portId)).flat(Infinity))];
+      const fileredData = this.airwayData.airway.airways
+                            .map(m => ({ airwayJunctions: m?.airwayJunctions?.find(j => j?.airways) }))
+                            .find(a => a?.airwayJunctions)?.airwayJunctions?.airways;
+      if(fileredData) { 
+        const coordinate = centerFromRect(fileredData[0].airway.geometry.coordinates);
+        const portSearchRadius = parseInt(useRuntimeConfig().public.semanticSearchRadiusMeters) || 20000;
+
+        try {
+          this.portData = await searchPorts(portIds, coordinate[0], coordinate[1], portSearchRadius, true);
+        }
+        catch(error) {
+          console.error(`error: get droneport info: ${error.message}`, error);
+        }
+      }
+
+      this.filteredRoutes = await this.buildRoutes();
     }
   },
   async mounted() {
@@ -731,6 +1012,107 @@
 </script>
   
 <style scoped>
+
+/* コンポーネント全高フィル */
+.drn_main__app {
+  height: 100%;
+  min-height: 0;
+}
+.drn_content__data {
+  overflow: hidden;
+}
+.drn_list__body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ネイティブテーブル */
+.drn_native_table_wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.drn_native_table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.drn_native_th {
+  text-align: left;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 2px solid #ddd;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.drn_native_th:hover {
+  background: #f0f0f0;
+}
+.drn_native_table tbody tr td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.drn_native_table tbody tr:hover {
+  background: #fafafa;
+}
+/* ページネーション */
+.drn_pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 6px 8px;
+  margin-top: 0;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: #ffffff;
+  z-index: 1;
+  border-top: 1px solid #e0e0e0;
+}
+.drn_pagination__per_page {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.drn_pagination__per_page select {
+  border: 1px solid #999;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.drn_pagination__info {
+  font-size: 13px;
+  color: #555;
+}
+.drn_pagination__controls {
+  display: flex;
+  gap: 4px;
+}
+.drn_pager_btn {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  padding: 0 6px;
+}
+.drn_pager_btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.drn_pager_btn--active {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
 
 /* モーダルウィンドウのスタイル */
 .popup {
@@ -840,17 +1222,97 @@ input[type="checkbox"]:checked::before {
 }
 
 .change-color-airwaystatus {
-  color: #FFFFFF;
-  background: #0F1ED2;
+  color: rgb(44, 105, 255);
+  background: rgb(211, 225, 254);
   display: inline-block;
-  padding: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .change-color-evaluation-airwaystatus {
-  color: #FFFFFF;
-  background: #E6248F;
+  color: rgb(216, 24, 129);
+  background: rgb(251, 223, 239);
   display: inline-block;
-  padding: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* スピナー */
+.drn_spinner__area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  gap: 16px;
+}
+.drn_spinner__text {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+/* 詳細ボタン */
+.drn_detail_btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+.drn_detail_btn--loading {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.drn_detail_btn__forbidden {
+  position: absolute;
+  bottom: -6px;
+  right: -8px;
+  font-size: 12px;
+  color: #e53935;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.drn_detail_btn--loading:hover .drn_detail_btn__forbidden {
+  opacity: 1;
+}
+/* データ取得中ガードモーダル */
+.drn_loading_guard__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.drn_loading_guard {
+  background: #fff;
+  border-radius: 8px;
+  padding: 32px 40px;
+  min-width: 280px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.drn_loading_guard__msg {
+  font-size: 15px;
+  margin: 0 0 20px;
+  color: #333;
+}
+.drn_loading_guard__close {
+  padding: 6px 24px;
+  background: #333;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.v-table__wrapper table tbody tr td {
+  vertical-align: middle;
 }
 
 </style>
