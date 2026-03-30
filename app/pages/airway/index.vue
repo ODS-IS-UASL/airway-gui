@@ -104,17 +104,6 @@
           </div>
           <div class="option-container">
             <div class="option-item">
-              <div class="e-fieldLabel-option">事業所・会社名</div>
-              <ul class="horizontal-list">
-                <li>
-                  <select v-model="companyName" class="e-textField-select">
-                    <option value="" selected hidden>-- 事業所・会社名称 --</option>
-                    <option v-for="(item, index) in companyNameItems" :key="item.id" :value="item.id">{{ item.name }}</option>
-                  </select>
-                </li>
-              </ul>
-            </div>
-            <div class="option-item">
               <div class="e-fieldLabel-select">エリア</div>
               <ul class="horizontal-list">
                 <li>
@@ -231,14 +220,10 @@ export default {
     endDate: '',
     area: '',
     areaitems: [],
-    companyName: '',
-    companyNameItems: [],
-    routes: [],
     filteredRoutes: [],
     cookie_role: null,
     role: null,
     falltrangeData: null,
-    operatorData: null,
     relationship_airwayIds: [],
    };
   },
@@ -272,11 +257,6 @@ export default {
       }
 
       let isAdmin = false;
-      for(let i=0; i<this.companyNameItems.length; i++) {
-        if(this.companyName === this.companyNameItems[i].id && this.companyNameItems[i].role.includes('1')) {
-          isAdmin = true;
-        }
-      }
       
       const routes_filter = await this.routes;
       this.filteredRoutes = routes_filter.filter(item => {
@@ -290,12 +270,11 @@ export default {
           isPurposeMatch = !this.purposes.length || this.purposes.includes("その他");
         }
         const isapplicationMatch = !start || !end || (start <= itemapplication_date && end >= itemapplication_date);
-        const isCompanyNameMatch =!this.companyName || isAdmin;
         const isAreaMatch =!this.area || ( this.area === item.area);
 
         this.showPopup = !this.showPopup;
 
-        const isView = isPurposeMatch && isapplicationMatch && isCompanyNameMatch && isAreaMatch;
+        const isView = isPurposeMatch && isapplicationMatch && isAreaMatch;
         // 選択されたindexが検索結果から外れたときはダウンロード対象から外すためnullを設定する
         if(item.id === this.selectedRow) {
           if(!(isView)) {
@@ -312,7 +291,6 @@ export default {
       this.purposes = ["物資運搬","送電線点検","河川監視","山岳監視","航空撮影","その他"];
       this.startDate = '';
       this.endDate = '';
-      this.companyName = '';
       this.area = '';
     },
     onExportButtonClick: async function () {
@@ -321,26 +299,22 @@ export default {
         alert("航路を指定してください");
         return;
       }
-      const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-      const url = `${miscApiBaseUrl}/dipsAirwayExport`;
-      const headers = {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        responseType: 'blob', 
-      };
       const body = {
         "airwayIdList": [this.selectedAirwayId],
       };
 
       try {
-        const response = await axios_post(url, body, headers);
-        if (response.status !== 200) {
-          console.error('API request failed:', response.status);
+        const response = await fetch(`/api/misc/dipsAirwayExport`, {
+          method: 'POST',
+          'Content-Type': 'application/json',
+          body: JSON.stringify(body),
+        });
+        if (!response?.ok) {
+          console.error('dips export failed');
           return false;
         }
         // レスポンスデータからzipファイル作成
-        const blob = new Blob([response.data], { type: 'application/zip' });
+        const blob = await response.blob()
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         // ファイル名はAPIからの返却値に揃えている
@@ -397,19 +371,21 @@ export default {
   },
   async mounted() {
     // 最大許容落下範囲情報取得
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-    const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+    const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+      method: 'GET',
+      query: { businessNumber: useRuntimeConfig().public.businessNumber }
+    });
     console.log(rangeRes);
     if (rangeRes.status != 200) {
       console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
       this.falltrangeData = null;
       return;
     }
-    this.falltrangeData = rangeRes.data;
+    const rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
+    this.falltrangeData = rangeData;
     // 地域一覧を取得
     const areajsonUrl = `/api/getAreaJsonData`;
-    const areadata = await axios_get(areajsonUrl);
+    const areadata = await $fetch(areajsonUrl);
     if (areadata.data != undefined) {
       // オプション検索で使用する地域一覧を作成
       this.areaitems = [];
@@ -424,38 +400,18 @@ export default {
     }
     console.log(`areaitems: ${this.areaitems}`);
 
-    // 事業者一覧取得
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const operatorUrl = `${miscApiBaseUrl}/operator`;
-    const operatorRes = await axios_get(operatorUrl);
-    if (operatorRes.status === 200 && operatorRes.data != undefined) {
-      this.operatorData = operatorRes.data;
-      // オプション検索で使用する事業所・会社名一覧を作成
-      this.companyNameItems = [];
-      for(let i=0; i<this.operatorData.operatorList.length; i++) {
-        const is_exist_companyName = this.companyNameItems.includes(this.operatorData.operatorList[i].operatorName);
-        if (is_exist_companyName == false) {
-          const element = {
-            id: this.operatorData.operatorList[i].operatorId,
-            name: this.operatorData.operatorList[i].operatorName,
-            role: this.operatorData.operatorList[i].roleList,
-          }
-          this.companyNameItems.push(element);
-        }
-      }
-    } else {
-      console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-      return;
-    }
-
-    const airwayUrl = `${airwayApiBaseUrl}/airway`;
-    const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-    if (airwayRes.status != 200) {
-      console.error(`error: get airway info {status: ${airwayRes.status}}.`);
+    const uaslRes = await $fetch('/api/airway/uasl', { 
+      method: 'GET',
+      query: { all: true }
+    });
+    if (uaslRes.status != 200) {
+      console.error(`error: get uasl info {status: ${uaslRes.status}}.`);
       this.airwayData = {};
       return;
     }
-    this.airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
+    // ここでUASL→airwayに変換
+    this.airwayResData = utils.convertUaslToAirway(uaslRes.data);
+    this.airwayData = useAirwayConvertConnectionOrder(this.airwayResData);
     const airwayAdministratorId = this.airwayData.airway.airwayAdministratorId;
     const tmp_routes = this.airwayData.airway.airways.map((item, index) => ({
       id: index,
@@ -467,30 +423,11 @@ export default {
       application_date: useDateString1(item.createdAt),
       update_date: useDateString1(item.updatedAt),
       area: getareaName(this.falltrangeData, item.airwayId),
-      companyName: getcompanyName(this.operatorData, airwayAdministratorId),
       purpose: item.flightPurpose,
     }));
-    // ユーザが関係者である場合、関係のあるopreratorIdでフィルタリング
-    if (this.role == 3) {
-      // 関連のある航路IDを取得
-      this.relationship_airwayIds = [];
-      for(let i=0; i<this.operatorData.operatorList.length; i++) {
-        if (this.operatorData.operatorList[i].operatorId == this.cookie_role.operatorId) {
-          for (let j=0; j<this.operatorData.operatorList[i].linkAirwayList.length; j++) {
-            this.relationship_airwayIds.push(this.operatorData.operatorList[i].linkAirwayList[j]);
-          }
-        }
-      }
-      // 関係するairwayIdでフィルタリング
-      this.routes = tmp_routes.filter(item => {
-        const isView = this.relationship_airwayIds.includes(item.airwayId);
-        return isView;
-      });
-      this.filteredRoutes = this.routes;
-    } else {
-      this.routes = tmp_routes;
-      this.filteredRoutes = this.routes;
-    }
+    // ユーザが関係者である場合のフィルタリングは/operator廃止により無効化
+    this.routes = tmp_routes;
+    this.filteredRoutes = this.routes;
   },
 };
 
