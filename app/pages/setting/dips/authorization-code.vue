@@ -7,7 +7,7 @@
 
 <script setup>
   import { ref } from 'vue';
-  import axios from 'axios';
+
   definePageMeta({ auth: false });
 
   const message = ref('');
@@ -34,9 +34,6 @@
       return;
     }
 
-    const config = useRuntimeConfig();
-    const clientId = config.public.oidcClientId;
-
     if (code == null) {
       console.log('code is null or undefined.');
       console.log('redirect error : ' + error);
@@ -50,52 +47,19 @@
     }
 
     let response;
-    const getTokenParams = { code };
-    // トークンリクエスト
+    const body = { code: code };
     try {
-      response = await axios.post('/api/getDipsToken', getTokenParams);
-      if (response.data.status !== 200) {
-        console.error(`Failed to getDipsToken.(status:${response.data.status}).`);
+      response = await $fetch('/api/misc/dipsToken', { 
+        method: 'PUT',
+        body: body
+      });
+      if (response.status !== 200) {
+        console.error(`Failed to getDipsToken.(status:${response.status}).`);
         message.value = msgFailed;
         return;
       }
     } catch (error) {
-      console.error('Failed to getDipsToken.', error);
-      message.value = msgFailed;
-      return;
-    }
-
-    // 外部連携登録
-    const regTokenParams = {
-      "clientId": clientId,
-      "accessToken": response.data.data.access_token,
-      "expiresIn": response.data.data.expires_in,
-      "refreshExpiresIn": response.data.data.refresh_expires_in,
-      "refreshToken": response.data.data.refresh_token,
-      "tokenType": response.data.data.token_type,
-      "idToken": response.data.data.id_token,
-      "notBeforePolicy": response.data.data["not-before-policy"],
-      "sessionState": response.data.data.session_state,
-      "scope": response.data.data.scope
-    };
-
-    try {
-      response = await axios.put('/api/putDipsToken', regTokenParams, { withCredentials: true });
-      if (response.data.status !== 200) {
-        console.error(`Failed to getDipsToken.(status:${response.data.status}).`);
-        message.value = msgFailed;
-        return;
-      }
-    } catch (error) {
-      console.error('Failed to putDipsToken.');
-      if (error.response) {
-        console.log("Axios error data : " + error.response.data);
-        console.log("Axios error status : " + error.response.status);
-      } else if (error.request) {
-        console.log("Axios no response : " + error.request);
-      } else {
-        console.log("Axios error", error.message);
-      }
+      console.error('Failed to put token.');
       message.value = msgFailed;
       return;
     }
