@@ -33,7 +33,7 @@
             <img
               src="../assets/css/img/dummyImg/dummy_legendIcon_routesection.svg"
               alt="アイコン決定後記述..."
-            />最大落下許容範囲
+            />最大落下範囲
           </li>
         </ul>
         <ul class="legend-category">
