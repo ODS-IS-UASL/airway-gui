@@ -5,7 +5,7 @@
     <!-- ヘッダ -->
     <div class="drn_header">
       <div class="drn_header__item">
-        <v-card-title class="drn_header__title">最大落下許容範囲一覧</v-card-title>
+        <v-card-title class="drn_header__title">最大落下範囲一覧</v-card-title>
       </div>
       <div class="drn_header__action">
         <v-btn
@@ -63,17 +63,6 @@
       </div>
       <div class="option-container">
         <div class="option-item">
-          <div class="e-fieldLabel-option">事業所・会社名</div>
-          <ul class="horizontal-list">
-            <li>
-              <select v-model="companyName" class="e-textField-select">
-                <option value="" selected hidden>-- 事業所・会社名称 --</option>
-                <option v-for="item in companyNameItems" :key="item" :value="item">{{ item }}</option>
-              </select>
-            </li>
-          </ul>
-        </div>
-        <div class="option-item">
           <div class="e-fieldLabel-select">エリア</div>
           <ul class="horizontal-list">
             <li>
@@ -125,7 +114,6 @@
               <td>{{ item.areaName }}</td>
               <td>{{ item.coordinates }}</td>
               <td>{{ item.application_date }}</td>
-              <td>{{ item.companyName }}</td>
               <td>
                 <router-link
                   :to="{ 
@@ -134,7 +122,9 @@
                       fid: item.fid,
                       name: item.name,
                       application_date: item.application_date,
-                      area: item.areaName
+                      area: item.areaName,
+                      typeId: item.typeId,
+                      regionId: item.regionId
                     } 
                   }"
                 >
@@ -182,13 +172,12 @@ components: {
 data() {
   return {
     headers: [
-      { title: '最大落下許容範囲ID', align: 'start', key: 'fid', sortable: true },
+      { title: '最大落下範囲ID', align: 'start', key: 'fid', sortable: true },
       { title: '申請状況', align: 'start', key: 'reservationStatus', sortable: true },
-      { title: '最大落下許容範囲名', align: 'start', key: 'name', sortable: true },
+      { title: '最大落下範囲名', align: 'start', key: 'name', sortable: true },
       { title: 'エリア', align: 'start', key: 'areaName', sortable: true },
       { title: '航路数', align: 'start', key: 'coordinatesLength', sortable: true },
       { title: '申請・更新日', align: 'start', key: 'application_date', sortable: true },
-      { title: '航路運営者', align: 'start', key: 'companyName', sortable: true },
       { title: '詳細', align: 'start', key: 'details', sortable: false },
     ],
     routes: [],
@@ -200,12 +189,9 @@ data() {
     endDate: '',
     area: '',
     areaitems: [],
-    companyName: '',
-    companyNameItems: [],
     filteredRoutes: [],
     rangeData: null,
     filteredRangeData: null,
-    operatorData: null,
     airwayData: null,
     viewType: 'listview',
   };
@@ -244,19 +230,17 @@ methods: {
                                                     end.getMonth() >= itemapplication_date.getMonth() && 
                                                     end.getDate() >= itemapplication_date.getDate());
 
-      const isCompanyNameMatch =!this.companyName || ( this.companyName === item.companyName);
       const isAreaMatch =!this.area || ( this.area === item.areaName);
 
       this.showPopup = !this.showPopup;
 
-      return isapplicationMatch && isCompanyNameMatch && isAreaMatch;
+      return isapplicationMatch && isAreaMatch;
     });
   },
   reset() {
     this.purposes = ["物資運搬","送電線点検","河川監視","山岳監視","航空撮影","その他"];
     this.startDate = '';
     this.endDate = '';
-    this.companyName = '';
     this.area = '';
   },
   formatDate(isoDate) {
@@ -277,16 +261,17 @@ created() {
   this.filteredRoutes = this.routes;
 },
 async mounted() {  
-  const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-  const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-  const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+  const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+    method: 'GET',
+    query: { businessNumber: localStorage.getItem('uasl:user:parentOperatorId') }
+  });
   console.log(rangeRes);
-  if (rangeRes.status != 200) {
+  if (rangeRes.status !== 200) {
     console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
     this.rangeData = null;
     return;
   } else {
-    this.rangeData = rangeRes.data;
+    this.rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
   }
 
   this.filteredRangeData = this.rangeData;
@@ -301,37 +286,22 @@ async mounted() {
     }
   }
 
-  // 事業者一覧取得
-  const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-  const operatorUrl = `${miscApiBaseUrl}/operator`;
-  const operatorRes = await axios_get(operatorUrl);
-  if (operatorRes.status === 200 && operatorRes.data != undefined) {
-    this.operatorData = operatorRes.data;
-    // オプション検索で使用する事業所・会社名一覧を作成
-    this.companyNameItems = [];
-    for(let i=0; i<this.operatorData.operatorList.length; i++) {
-      const is_exist_companyName = this.companyNameItems.includes(this.operatorData.operatorList[i].operatorName);
-      if (is_exist_companyName == false) {
-        this.companyNameItems.push(this.operatorData.operatorList[i].operatorName);
-      }
-    }
-  } else {
-    console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-    return;
-  }
+  // /operator廃止につき事業者一覧取得は展進しない
 
-  const airwayUrl = `${airwayApiBaseUrl}/airway`;
-  const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-  if (airwayRes.status != 200) {
-    console.error(`error: get airway info {status: ${airwayRes.status}}.`);
+  const uaslRes = await $fetch('/api/airway/uasl', { 
+    method: 'GET',
+    query: { all: true }
+  });
+  if (uaslRes.status !== 200) {
+    console.error(`error: get uasl info {status: ${uaslRes.status}}.`);
     this.airwayData = {};
     return;
   }
-  this.airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
+  const uaslResData = utils.convertUaslToAirway(uaslRes.data);
+  this.airwayData = useAirwayConvertConnectionOrder(uaslResData);
   if (this.rangeData && this.rangeData.fallToleranceRanges) {
     for (let i = 0; i < this.rangeData.fallToleranceRanges.length; i++) {
       let item = this.rangeData.fallToleranceRanges[i];
-      let companyName = await getcompanyName(this.operatorData, item.airwayOperatorId);
       let route = {
         fid: item.fallToleranceRangeId, 
         reservationStatus: '承認済',
@@ -339,7 +309,8 @@ async mounted() {
         areaName: item.areaName,
         coordinatesLength: item.airwayIdUse.length,
         coordinates: item.airwayIdUse.length + '航路',
-        companyName: companyName,
+        typeId: item.typeId,
+        regionId: item.regionId,
         application_date: this.formatDate(item.createdAt),
         update_date: this.formatDate(item.updatedAt),
       }
@@ -431,6 +402,10 @@ async mounted() {
   letter-spacing: var(--unnamed-character-spacing-0);
   color: var(--txt_-333333);
   text-align: left;
+}
+
+.v-table__wrapper table tbody tr td {
+  vertical-align: middle;
 }
 
 </style>
