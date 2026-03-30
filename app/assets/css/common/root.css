@@ -19,6 +19,10 @@
     --unnamed-color-af0075: #AF0075;
     --unnamed-color-ff0000: #FF0000;
     --unnamed-color-ffffff: #FFFFFF;
+    /* 料金表管理改修  Start */
+    --unnamed-color-eff2f6: #EFF2F6;
+    --unnamed-color-e53935: #E53935;
+    /* 料金表管理改修  End */
     
     /* Font/text values */
     --unnamed-font-family-biz-udpgothic: BIZ UDPGothic;
