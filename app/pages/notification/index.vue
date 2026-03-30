@@ -4,20 +4,21 @@ import { useMqtt } from '~/composables/useMqtt'
 
 async function fetchAirwayReservationId(dronePortReservationId) {
   let airwayReservationId = '';
-  if (dronePortReservationId) {
-    try {
-      const url = '/api/getAirwayReservationIdFrom';
-      let response = await axios_get(url, {id: dronePortReservationId}, {});
-      if (response.status === 200) {
-        const rsvId = response.data.id;
-        if (rsvId !== '') airwayReservationId = rsvId;
-      } else {
-        console.error(`error: getAirwayReservationIdFrom {status: ${response.status}}.`);
-      }
-    } catch (err) {
-      console.error('Error: fetchAirwayReservationId: ', err);
-    }
-  }
+  // /api/getAirwayReservationIdFrom はDBを使っており、使わなくなったため必ず失敗する
+  // if (dronePortReservationId) {
+  //   try {
+  //     const url = '/api/getAirwayReservationIdFrom';
+  //     let response = await axios_get(url, {id: dronePortReservationId}, {});
+  //     if (response.status === 200) {
+  //       const rsvId = response.data.id;
+  //       if (rsvId !== '') airwayReservationId = rsvId;
+  //     } else {
+  //       console.error(`error: getAirwayReservationIdFrom {status: ${response.status}}.`);
+  //     }
+  //   } catch (err) {
+  //     console.error('Error: fetchAirwayReservationId: ', err);
+  //   }
+  // }
   return airwayReservationId;
 }
 
@@ -38,13 +39,19 @@ try {
 
   onMounted(() => {
     localStorage.setItem('notificationBadge', String(''));
-    // マウント時に接続
-    connectMqtt([
-      'airway/operator/+/airwayEvaluationNotify/+',
-      'airway/operator/+/airwayDeviationNotification',
-      'airway/operator/+/airwayReservation/+',
-      'airway/operator/+/vis/droneport/+/+/cmd'
-    ])
+    // 自身の operatorId と parentOperatorId あての通知のみ購読
+    const operatorId = localStorage.getItem('uasl:user:operatorId') || '+';
+    const parentOperatorId = localStorage.getItem('uasl:user:parentOperatorId') || '+';
+    const ids = [...new Set([operatorId, parentOperatorId])];
+    const topics = ids.flatMap(id => [
+      `airway/operator/${id}/airwayEvaluationNotify/+`,
+      `airway/operator/${id}/airwayDeviationNotification`,
+      `airway/operator/${id}/airwayReservation/+`,
+      `airway/operator/${id}/vis/droneport/+/+/cmd`,
+      `uasl/operator/${id}/uaslDeviationNotification`,
+      `uasl/operator/${id}/uaslReservation/+`,
+    ]);
+    connectMqtt(topics);
   })
 
   watch([latestMessage, topicName], ([newMsg, newTopic]) => {
@@ -67,7 +74,7 @@ try {
         })
         let notifyType = '';
         if(msg.evaluationResults === true){
-          notifyType = "　運航中　";
+          notifyType = "運航中";
         }else{
           switch (msg.type) {
             case "weather":
@@ -91,7 +98,7 @@ try {
         let airwayEvaluationType = '';
         let reasons = '';
         if(msg.evaluationResults === true){
-          airwayEvaluationType = "　運航中　";
+          airwayEvaluationType = "運航中";
           reasons = ""
         }else{
           airwayEvaluationType = msg.type;
@@ -130,7 +137,7 @@ try {
         })
         let notifyType = '';
         if(msg.evaluationResults === true){
-          notifyType = "　運航中　";
+          notifyType = "運航中";
         }else{
           notifyType = "航路逸脱";
         }
@@ -145,7 +152,52 @@ try {
         vm.filteredRoutes.push(addRoute);
         localStorage.setItem("noticeDB", JSON.stringify(vm.filteredRoutes));
         vm.routeCurrentId = vm.routeCurrentId + 1;
+      } else if (tokens[3] === 'uaslDeviationNotification') {
+        let uaslName = 'Not found';
+        vm.reservationList.forEach((reservation) => {
+          if (reservation.reservationId == msg.uaslReservationId) {
+            uaslName = reservation.uaslName;
+            return;
+          }
+        })
+        let notifyType = '';
+        if(msg.operationalStatus === "RouteApproach") {
+          notifyType = "航路進入前";
+        } else if (msg.operationalStatus === "NormalOperation") {
+          notifyType = "運航中";
+        } else if (msg.operationalStatus === "RouteDeviation") {
+          notifyType = "航路逸脱";
+        } else if (msg.operationalStatus === "PlannedRouteDeviation") {
+          notifyType = "計画された航路逸脱";
+        }
   
+        const addRoute = {
+          id: vm.routeCurrentId,
+          notifyDate: notifyDate,
+          reservationId: msg.uaslReservationId,
+          notifyType: notifyType,
+          airwayName: uaslName
+        }
+        vm.filteredRoutes.push(addRoute);
+        localStorage.setItem("noticeDB", JSON.stringify(vm.filteredRoutes));
+        vm.routeCurrentId = vm.routeCurrentId + 1;
+      } else if (tokens[3] === 'uaslReservation') {
+        // reservationId が含まれる場合は乗り入れ先航路通知、含まれない場合は主航路通知
+        const isDestination = 'reservationId' in msg;
+        const notifyType = isDestination ? '予約通知（乗入れ先）' : '予約通知（主経路）';
+        const reservationId = isDestination ? msg.reservationId : msg.requestId;
+        const airwayName = isDestination ? (msg.uaslId ?? '') : (msg.originReservation?.uaslId ?? '');
+
+        const addRoute = {
+          id: vm.routeCurrentId,
+          notifyDate: notifyDate,
+          reservationId: reservationId,
+          notifyType: notifyType,
+          airwayName: airwayName
+        }
+        vm.filteredRoutes.push(addRoute);
+        localStorage.setItem("noticeDB", JSON.stringify(vm.filteredRoutes));
+        vm.routeCurrentId = vm.routeCurrentId + 1;
       } else if (tokens[3] === 'airwayReservation') {
         let airwayName = 'Not found';
         vm.reservationList.forEach((reservation) => {
@@ -308,7 +360,15 @@ try {
                             purpose: getChartDataByReservation(item.reservationId)?.purpose, 
                             startDay: getChartDataByReservation(item.reservationId)?.Departure,
                             endDay: getChartDataByReservation(item.reservationId)?.Arrival, 
-                            operatorId: getChartDataByReservation(item.reservationId)?.operatorId, 
+                            operatorId: getChartDataByReservation(item.reservationId)?.operatorId,
+                            airwaySectionId: getChartDataByReservation(item.reservationId)?.airwaySectionId,
+                            startJunctionId: getChartDataByReservation(item.reservationId)?.startJunctionId,
+                            endJunctionId: getChartDataByReservation(item.reservationId)?.endJunctionId,
+                            vehicleId: getChartDataByReservation(item.reservationId)?.vehicleId,
+                            portFrom: getChartDataByReservation(item.reservationId)?.portFrom,
+                            portTo: getChartDataByReservation(item.reservationId)?.portTo,
+                            reservationIds: getChartDataByReservation(item.reservationId)?.reservationIds,
+                            registrationId: getChartDataByReservation(item.reservationId)?.registrationId,
                           } }"><img class="drn_table__detail_icon" src="/assets/css/img/main/circle-info-solid.svg" width="20" height="20"></router-link></td>
                         </tr>
                       </template>
@@ -449,31 +509,34 @@ export default {
     
     this.filteredRoutes = this.routes;
 
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const airwayUrl = `${airwayApiBaseUrl}/airway`;
-    const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-    console.log(airwayRes);
-    if (airwayRes.status != 200) {
-      console.error(`error: get airway info {status: ${airwayRes.status}}.`);
+    const uaslRes = await $fetch('/api/airway/uasl', { 
+      method: 'GET',
+      query: { all: true }
+    });
+    console.log(uaslRes);
+    if (uaslRes.status !== 200) {
+      console.error(`error: get uasl info {status: ${uaslRes.status}}.`);
       this.chartData = {};
       return;
     }
-    this.chartData = useAirwayConvertConnectionOrder(airwayRes.data);
+    const uaslResData = utils.convertUaslToAirway(uaslRes.data);
+    this.chartData = useAirwayConvertConnectionOrder(uaslResData);
     let lastPage = 1;
     let currentPage = 1;
     let tmpReservationData = null;
     let reservationUrl = '';
-    const reservationApiBaseUrl = useRuntimeConfig().public.reservationApiBaseUrl;
     if (this.role == 1) {
-      reservationUrl = `${reservationApiBaseUrl}/admin/airwayReservations`;
-    } else if (this.role == 2) {
-      reservationUrl = `${reservationApiBaseUrl}/operator/${this.cookie_role.operatorId}/airwayReservations`;
+      reservationUrl = `/api/reservation/admin/uaslReservations`;
+    } else if (this.role == 2 || this.role == 3) {
+      reservationUrl = `/api/reservation/operator/${this.cookie_role.operatorId}/uaslReservations`;
     } else {
       console.log("error: get airway reservation info (permision denied.)");
       this.reservationData = {};
       return;
     }
-    let reservationRes = await axios_get(reservationUrl, {}, {});
+    let reservationRes = await $fetch(reservationUrl, { 
+      method: 'GET',
+    });
     console.log(reservationRes);
     if (reservationRes.status != 200) {
       console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
@@ -486,7 +549,10 @@ export default {
 
     while (currentPage < lastPage) {
       currentPage++;
-      let reservationRes = await axios_get(reservationUrl, {page: currentPage}, {});
+      let reservationRes = await $fetch(reservationUrl, { 
+        method: 'GET',
+        query: { page: currentPage }
+      });
       console.log(reservationRes);
       if (reservationRes.status != 200) {
         console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
@@ -506,6 +572,33 @@ export default {
     if (this.reservationData['result'] != undefined) {
       this.reservationData['result'].forEach((reservation) => {
         let airwayId = useAirwayGetAirwayIdFromSectionId(this.chartData, reservation['airwaySections'][0]['airwaySectionId']) // 予約に含まれる航路区画IDをもとに航路IDを特定
+        // 航路区画 ID リストと start/end 航路点 ID を算出（detail.vue の航路図表示に必要）
+        const sections = reservation['airwaySections'];
+        const airwaySectionIds = sections.map(s => s.airwaySectionId);
+        const firstSectionId = sections[0]?.airwaySectionId;
+        let startJunctionId = '';
+        let endJunctionId = '';
+        for (const airway of (this.chartData?.airway?.airways ?? [])) {
+          const pointIdList = [];
+          let matchingJunctionIds = null;
+          for (const sec of (airway.airwaySections ?? [])) {
+            if (sections.some(s => s.airwaySectionId === sec.airwaySectionId)) {
+              for (const pid of (sec.airwayJunctionIds ?? [])) pointIdList.push(pid);
+            }
+            if (firstSectionId === sec.airwaySectionId) matchingJunctionIds = sec.airwayJunctionIds;
+          }
+          if (pointIdList.length > 0) {
+            let sId = pointIdList[0];
+            let eId = pointIdList[pointIdList.length - 1];
+            if (sections.length > 1 && matchingJunctionIds && matchingJunctionIds[matchingJunctionIds.length - 1] === eId) {
+              [sId, eId] = [eId, sId];
+            }
+            startJunctionId = String(sId);
+            endJunctionId = String(eId);
+            break;
+          }
+        }
+
         let element = {
           id: id,
           reservationId: reservation['airwayReservationId'],
@@ -524,6 +617,14 @@ export default {
           updateDay: useDateString2(reservation['updatedAt']),
           purpose: useAirwayGetPurposeFromAirwayId(this.chartData, airwayId),
           operatorId: reservation['operatorId'],
+          airwaySectionId: airwaySectionIds,
+          startJunctionId: startJunctionId,
+          endJunctionId: endJunctionId,
+          vehicleId: (reservation['vehicles'] ?? []).map(v => v?.vehicleId).filter(Boolean),
+          portFrom: reservation?.ports?.[0]?.name ?? '',
+          portTo: reservation?.ports?.[1]?.name ?? '',
+          reservationIds: sections.map(s => s.reservationId ?? ''),
+          registrationId: reservation?.vehicles?.[0]?.aircraftInfo?.registrationId ?? '',
         };
         tmpreservationList.push(element);
         id++;
