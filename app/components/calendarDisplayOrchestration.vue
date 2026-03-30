@@ -1,28 +1,35 @@
 <template>
   <div>
     <FullCalendar ref="fullCalendarRef" :options="calendarOptions"/>
-    <div v-if="showPopup" class="popup" :style="popupStyle">
+    <div v-if="showPopup" ref="popupRef" class="popup" :style="popupStyle">
       <p>{{ popupEvent.title }}</p>
       <p>{{ popupEvent.start }}~{{ popupEvent.end }}</p>
       <p v-if="popupEvent.classNames === 'aiway-all'">航路: {{ popupEvent.airwayName }}</p>
       <p v-if="popupEvent.classNames === 'aiway-all'">離陸場: ---</p>
-      <p v-if="popupEvent.classNames === 'aiway-all'">陸場: ---</p>
+      <p v-if="popupEvent.classNames === 'aiway-all'">着陸場: ---</p>
 
       <p v-if="popupEvent.classNames === 'airway-port-all'">航路: {{ popupEvent.airwayName }}</p>
       <p v-if="popupEvent.classNames === 'airway-port-all'">離陸場: {{ popupEvent.departurePort }}</p>
-      <p v-if="popupEvent.classNames === 'airway-port-all'">陸場: {{ popupEvent.arrivalPort }}</p>
+      <p v-if="popupEvent.classNames === 'airway-port-all'">着陸場: {{ popupEvent.arrivalPort }}</p>
 
       <p v-if="popupEvent.classNames === 'airway-port-departure'">航路: {{ popupEvent.airwayName }}</p>
       <p v-if="popupEvent.classNames === 'airway-port-departure'">離陸場: {{ popupEvent.departurePort }}</p>
-      <p v-if="popupEvent.classNames === 'airway-port-departure'">陸場: ---</p>
+      <p v-if="popupEvent.classNames === 'airway-port-departure'">着陸場: ---</p>
 
       <p v-if="popupEvent.classNames === 'airway-port-arrival'">航路: {{ popupEvent.airwayName }}</p>
       <p v-if="popupEvent.classNames === 'airway-port-arrival'">離陸場: ---</p>
-      <p v-if="popupEvent.classNames === 'airway-port-arrival'">陸場: {{ popupEvent.arrivalPort }}</p>
+      <p v-if="popupEvent.classNames === 'airway-port-arrival'">着陸場: {{ popupEvent.arrivalPort }}</p>
 
       <p v-if="popupEvent.classNames === 'port-all'">航路: ---</p>
       <p v-if="popupEvent.classNames === 'port-all'" >離陸場: {{ popupEvent.departurePort }}</p>
-      <p v-if="popupEvent.classNames === 'port-all'">陸場: {{ popupEvent.arrivalPort }}</p>
+      <p v-if="popupEvent.classNames === 'port-all'">着陸場: {{ popupEvent.arrivalPort }}</p>
+
+      <!-- 他社予約（availabilityData 由来） -->
+      <template v-if="popupEvent.classNames === 'other-reservation'">
+        <p v-if="popupEvent.airwayName && popupEvent.airwayName !== '---'">航路: {{ popupEvent.airwayName }}</p>
+        <p v-if="popupEvent.departurePort && popupEvent.departurePort !== '---'">離陸場: {{ popupEvent.departurePort }}</p>
+        <p v-if="popupEvent.arrivalPort && popupEvent.arrivalPort !== '---'">着陸場: {{ popupEvent.arrivalPort }}</p>
+      </template>
     </div>
   </div>
 </template>
@@ -45,7 +52,11 @@ export default {
       required: true
     },
     reservationData: {
-      type: Object,
+      type: Array,
+      required: true
+    },
+    availabilityData: {
+      type: Array,
       required: true
     },
     airwayData: {
@@ -72,13 +83,18 @@ export default {
       type: String,
       required: true
     },
-    portsReservationData: {
-      type: Object,
-      required: true
-    },
     isEndIdFirst: {
       type: Boolean,
       required: true
+    },
+    section: {
+      type: String,
+      required: true
+    },
+    // portId → { portName } のハッシュマップ（airwaySetting で構築・useNewReservationCache 経由で受け取る）
+    portHashMap: {
+      type: Object,
+      default: () => ({})
     },
   },
   setup(props, { expose, emit  }) {
@@ -87,150 +103,221 @@ export default {
     const events = ref([]);
     const operatorData = ref(null);
 
-    const reserveList = [];
+    const reserveList = []; // 自社予約（競合分のみ）
 
     const loadEvent = async (start, end) => {
-      if(props.isEndIdFirst){
-        // startとendの中身を入れ替える
-        [start, end] = [end, start];
-      }
-      let sectionList = useAirwayGetSectionIdListFromCorridorPointList(props.airwayData, [start, end], props.airwayId);
-      props.reservationData.forEach((reserve, index) => {
-        
-        let hitReserve = false;
-        reserve['airwaySections'].forEach((section) => {
-          if (sectionList.includes(section["airwaySectionId"])) {
-            hitReserve = true;
-          }
-        })
-        if (hitReserve && reserve.status === "RESERVED") {
-          reserveList.push({ ...reserve, index: index });
-        }
-      })
+      reserveList.length = 0;
+      if (props.isEndIdFirst) [start, end] = [end, start];
 
-      // 事業者一覧取得
-      const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-      const operatorUrl = `${miscApiBaseUrl}/operator`;
-      const operatorRes = await axios_get(operatorUrl);
-      if (operatorRes.status === 200 && operatorRes.data != undefined) {
-        operatorData.value = operatorRes.data;
-        console.log(`operatorData: ${JSON.stringify(operatorData.value)}`);
-      } else {
-        console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-        return;
-      }
+      // sectionList は「自社予約の競合チェック」にのみ使う（従来通り）
+      const sectionList = useAirwayGetSectionIdListFromCorridorPointList(
+        props.airwayData,
+        props.section.split(','),
+        props.airwayId
+      );
+
+      // 事業者一覧取得（自社・他社ともに事業者名表示に使う）
+      // const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
+      // const operatorUrl = `${miscApiBaseUrl}/operator`;
+      // const operatorRes = await axios_get(operatorUrl);
+      // if (operatorRes.status !== 200 || operatorRes.data == undefined) return;
+      // operatorData.value = operatorRes.data;
+
+      // ---------- 自社予約（reservationData）：従来通り 競合チェックして表示 ----------
+      props.reservationData.forEach((reserve, index) => {
+        let hitReserve = false;
+        (reserve.airwaySections ?? []).forEach((section) => {
+          if (sectionList.includes(section.airwaySectionId)) hitReserve = true;
+        });
+
+        if (hitReserve && reserve.status === "RESERVED") {
+          reserveList.push({ ...reserve, index });
+        }
+      });
 
       reserveList.forEach((reserve) => {
-      let classNames = 'aiway-all';
-      const startAt = reserve['airwaySections'][0]['startAt'];
-      const endAt = reserve['airwaySections'][0]['endAt'];
-      const companyName = getcompanyName(operatorData.value, reserve['operatorId']);
-      const matchingStartPort = props.portsReservationData.data.find(port => 
-        port.reservationTimeFrom === startAt && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort)
-      );
-      const matchingEndtPort = props.portsReservationData.data.find(port => 
-        port.reservationTimeTo === endAt && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort)
-      );
+        const startAt = reserve.airwaySections[0].startAt;
+        const endAt = reserve.airwaySections[reserve.airwaySections.length - 1].endAt;
+        const resolvedName = getcompanyName(operatorData.value, reserve.operatorId);
+        const companyName = (resolvedName === 'Not found' || resolvedName === 'Not found.')
+          ? '自社'
+          : resolvedName;
 
-      if (matchingStartPort && matchingEndtPort) {
-        classNames = 'airway-port-all';
-      } else {
-        const startMatch = props.portsReservationData.data.some(port => port.reservationTimeFrom === startAt && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort));
-        const endMatch = props.portsReservationData.data.some(port => port.reservationTimeTo === endAt && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort));
+        const departurePort = reserve.ports?.[0]?.name ?? '';
+        const arrivalPort = reserve.ports?.[1]?.name ?? '';
 
-        if (startMatch && !endMatch) {
-          classNames = 'airway-port-departure';
-        } else if (!startMatch && endMatch) {
-          classNames = 'airway-port-arrival';
-        }
-      }
+        let classNames = 'aiway-all';
+        if (departurePort && arrivalPort) classNames = 'airway-port-all';
+        else if (departurePort && !arrivalPort) classNames = 'airway-port-departure';
+        else if (!departurePort && arrivalPort) classNames = 'airway-port-arrival';
 
-      events.value.push({
-        id: reserve.index,
-        title: companyName,
-        start: useDateStringUTCtoLocal(startAt).slice(0, 19),
-        end: useDateStringUTCtoLocal(endAt).slice(0, 19),
-        color: '#D3D3D380',
-        textColor: '#333333',
-        classNames: classNames,
-      });
-    });
-    props.portsReservationData.data.forEach(port => {
-      const isMatched = reserveList.some(reserve => 
-        reserve['airwaySections'][0]['startAt'] === port.reservationTimeFrom ||  
-        reserve['airwaySections'][0]['endAt'] === port.reservationTimeTo
-      );
-      if (!isMatched && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort))  {
+        const flightPurpose = reserve.flightPurpose ?? '';
+
+        // 自社予約済み枠
         events.value.push({
-          title: getcompanyName(operatorData.value, port.operatorId),
-          start: useDateStringUTCtoLocal(port.reservationTimeFrom).slice(0, 19),
-          end: useDateStringUTCtoLocal(port.reservationTimeTo).slice(0, 19),
-          color: '#D3D3D380',
+          id: `reservation:${reserve.requestId}`,
+          title: companyName,
+          start: useDateStringUTCtoLocal(startAt).slice(0, 19),
+          end: useDateStringUTCtoLocal(endAt).slice(0, 19),
+          color: '#81B0FC1F',
           textColor: '#333333',
-          classNames: 'port-all',
+          classNames,
+          extendedProps: {
+            source: 'reservation',
+            reservationIndex: reserve.index,   // ← popup等で reservationData を引くため
+            requestId: reserve.requestId,
+            departurePort,
+            arrivalPort,
+            flightPurpose,
+          }
         });
-      }
-      })
-    }
+      });
+
+      // ---------- 他社予約（availabilityData）：競合済みなのでチェック不要、そのまま表示 ----------
+      (props.availabilityData ?? []).forEach((a) => {
+        (a.uaslSections ?? []).forEach((sec) => {
+          const resolvedName = getcompanyName(operatorData.value, sec.operatorId);
+          const companyName = (resolvedName === 'Not found' || resolvedName === 'Not found.')
+            ? (sec.flightPurpose ?? '他社予約')
+            : resolvedName; // ★ 事業者名表示（取得できない場合は飛行目的を表示）
+
+          // uaslId → 航路名 の解決（loaderAirwayData から取得）
+          let airwayName = '---';
+          if (sec.uaslId) {
+            const aw = props.airwayData?.airway?.airways?.find(a => a.airwayId === sec.uaslId);
+            if (aw?.airwayName) airwayName = aw.airwayName;
+          }
+
+          // portId → ポート名 の解決（portHashMap または embeddedの portName を優先）
+          let departurePort = '---';
+          let arrivalPort = '---';
+          if (Array.isArray(sec.ports)) {
+            const dep = sec.ports.find(p => p.usageType === 1);
+            const arr = sec.ports.find(p => p.usageType === 2);
+            if (dep) {
+              departurePort = dep.portName ||
+                (dep.portId ? (props.portHashMap?.[dep.portId]?.portName ?? '---') : '---');
+            }
+            if (arr) {
+              arrivalPort = arr.portName ||
+                (arr.portId ? (props.portHashMap?.[arr.portId]?.portName ?? '---') : '---');
+            }
+          }
+
+          // 他社予約済み枠
+          events.value.push({
+            id: `availability:${sec.requestId}`,
+            title: companyName,
+            start: useDateStringUTCtoLocal(sec.startAt).slice(0, 19),
+            end: useDateStringUTCtoLocal(sec.endAt).slice(0, 19),
+            color: '#0E8C851A',
+            textColor: '#333333',
+            classNames: ['other-reservation'],
+            extendedProps: {
+              source: 'availability',
+              requestId: sec.requestId,
+              operatorId: sec.operatorId,
+              airwayName,
+              departurePort,
+              arrivalPort,
+            }
+          });
+        });
+      });
+    };
 
     const currentView = ref('timeGridWeek');
     const fullCalendarRef = ref(null);
+    const popupRef = ref(null)
 
     const showPopup = ref(false);
     const popupEvent = ref({});
     const popupStyle = ref({});
     const popupElement = ref(null);
 
-    const handleEventMouseEnter = (info) => {
+    const calendarBodyTop = ref(0);
 
-      const extractTime = (dateString) => {
-        const date = new Date(dateString);
+    const handleEventMouseEnter = async (info) => {
+      const extractTime = (dateObj) => {
+        if (!dateObj) return '--:--';
+        const date = new Date(dateObj);
         const hours = date.getHours().toString().padStart(2, '0');
         const minutes = date.getMinutes().toString().padStart(2, '0');
         return `${hours}:${minutes}`;
-      }
+      };
 
       const startTime = extractTime(info.event.start);
       const endTime = extractTime(info.event.end);
 
-      const extractTimeFromISO = (isoString) => {
-        const date = new Date(isoString);
-        return date.toTimeString().slice(0, 5); // "HH:MM"形式に変換
-      };
+      const source = info.event.extendedProps?.source; // 'reservation' | 'availability'
+      const classNamesStr = Array.isArray(info.event.classNames)
+        ? info.event.classNames.join(' ')
+        : String(info.event.classNames || '');
 
-      const departurePort = props.portsReservationData.data.find(port => extractTimeFromISO(port.reservationTimeFrom) === startTime && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort) && port.usageType === 1)?.dronePortName || '---';
-      const arrivalPort = props.portsReservationData.data.find(port => extractTimeFromISO(port.reservationTimeTo ) === endTime && (port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort) && port.usageType === 2)?.dronePortName || '---';
-
+      // デフォルト（他社予約は基本情報のみ）
       let airwayName = '---';
-      if (info.event.id && props.reservationData[info.event.id]?.airwayReservationId) {
-        let airwayId = useAirwayGetAirwayIdFromSectionId(props.airwayData, props.reservationData[info.event.id]['airwaySections'][0]['airwaySectionId']) // 予約に含まれる航路区画IDをもとに航路IDを特定
-        airwayName = useAirwayGetAirwayNameFromAirwayId(props.airwayData, airwayId);
+      let departurePort = '---';
+      let arrivalPort = '---';
+
+      // 自社予約のみ：航路名/ポート情報を表示
+      if (source === 'reservation') {
+        const idx = info.event.extendedProps?.reservationIndex;
+        const r = (typeof idx === 'number') ? props.reservationData?.[idx] : null;
+
+        departurePort = info.event.extendedProps?.departurePort || '---';
+        arrivalPort = info.event.extendedProps?.arrivalPort || '---';
+
+        if (r?.airwaySections?.length) {
+          const airwayNames = r.airwaySections
+            .map(s => useAirwayGetAirwayIdFromSectionId(props.airwayData, s.airwaySectionId))
+            .filter(Boolean)
+            .map(id => useAirwayGetAirwayNameFromAirwayId(props.airwayData, id))
+            .filter(Boolean);
+
+          airwayName = [...new Set(airwayNames)].join(', ') || '---';
+        }
       }
+
+      // 他社予約：extendedProps に格納済みの解決済み情報を使用
+      if (source === 'availability') {
+        airwayName = info.event.extendedProps?.airwayName || '---';
+        departurePort = info.event.extendedProps?.departurePort || '---';
+        arrivalPort = info.event.extendedProps?.arrivalPort || '---';
+      }
+
+      // popup表示内容
       popupEvent.value = {
-        title: info.event.title,
+        title: info.event.title,          // 自社も他社も「事業者名」を title に入れている前提
         start: startTime,
         end: endTime,
-        classNames: info.event.classNames.join(' '), // 配列を文字列に変換,
-        airwayName: airwayName,
-        departurePort: departurePort,
-        arrivalPort: arrivalPort,
+        classNames: classNamesStr,
+        airwayName,
+        departurePort,
+        arrivalPort,
       };
 
+      // popup位置計算
       const eventElement = info.el.getBoundingClientRect();
 
-      const popupWidth = 200; // ポップアップの幅を設定
+      showPopup.value = true;
+      await nextTick();
+      const popupWidth = popupRef.value.offsetWidth
+      showPopup.value = false;
       const windowWidth = window.innerWidth;
 
-      let left = eventElement.right + 10; // デフォルトはイベントの右側に表示
+      let left = eventElement.right + 10;
       if (left + popupWidth > windowWidth) {
-       left = eventElement.left - popupWidth - 10; // 右端に切れそうな場合は左側に表示
+        left = eventElement.left - popupWidth - 10;
       }
+      let top = eventElement.top + window.scrollY;
+      top = (top < calendarBodyTop.value) ? calendarBodyTop.value : top;
 
       popupStyle.value = {
         position: 'fixed',
-        top: `${eventElement.top + window.scrollY}px`,
-        left: `${left}px`
+        top: `${top}px`,
+        left: `${left}px`,
       };
+
       showPopup.value = true;
     };
 
@@ -297,7 +384,11 @@ export default {
 
       eventContent: function(arg) {
         let timeText = arg.timeText.replace('時', ':00');
-        return { html: `<div class="fc-event-time">${timeText}</div><div class="fc-event-title">${arg.event.title}</div>` };
+        const flightPurpose = arg.event.extendedProps?.flightPurpose;
+        const purposeHtml = flightPurpose
+          ? `<div class="fc-event-purpose">${flightPurpose}</div>`
+          : '';
+        return { html: `<div class="fc-event-time">${timeText}</div><div class="fc-event-title">${arg.event.title}</div>${purposeHtml}` };
       },
       eventDidMount: function(info) {
         // ブロックイベントにクラスを変更
@@ -308,6 +399,21 @@ export default {
         // イベントの色を設定
         info.el.style.backgroundColor = info.event.extendedProps.color || info.event.backgroundColor;
         info.el.style.color = info.event.extendedProps.textColor || info.event.textColor;
+      },
+
+      dayCellDidMount: function(arg) {
+        // 過去日付の背景色を変更
+        if(arg.date < new Date().setHours(0, 0, 0, 0)) {
+          arg.el.style.backgroundColor = '#EFF2F6';
+        }
+      },
+      dayHeaderDidMount: function(arg) {
+        // 過去日付の曜日ヘッダ部を変更（週表示の場合のみ）
+        if(currentView.value === 'timeGridWeek' && arg.date < new Date().setHours(0, 0, 0, 0)) {
+          arg.el.style.backgroundColor = '#EFF2F6';
+        }
+        // ヘッダ下端Y座標を日付部上端Y座標として取得
+        calendarBodyTop.value = arg.el?.getBoundingClientRect()?.bottom ?? 0;
       }
     });
 
@@ -394,27 +500,28 @@ export default {
           spanElement.style.height = ''; 
           spanElement.style.textAlign = ''; 
         }
-       });
+      });
 
+      /* ★当日 および 予約日に ● をつけないよう該当処理コメント化
       headerCells.forEach(cell => {
         const cellDate = cell.getAttribute('data-date');
         if (cellDate === today || cellDate === departureDate) {
           const spanElement = cell.querySelector('span');
-         if (spanElement) {
-          spanElement.style.color = '#ffffff'; 
-          spanElement.style.backgroundColor = '#000000'; 
-          spanElement.style.borderRadius = '50%'; 
-          spanElement.style.padding = '5px'; 
-          spanElement.style.display = 'inline-block'; 
-          spanElement.style.width = '35px'; 
-          spanElement.style.height = '35px'; 
-          spanElement.style.textAlign = 'center'; 
+          if (spanElement) {
+            spanElement.style.color = '#ffffff'; 
+            spanElement.style.backgroundColor = '#000000'; 
+            spanElement.style.borderRadius = '50%'; 
+            spanElement.style.padding = '5px'; 
+            spanElement.style.display = 'inline-block'; 
+            spanElement.style.width = '35px'; 
+            spanElement.style.height = '35px'; 
+            spanElement.style.textAlign = 'center'; 
           }
         }
-      });
+      });*/
     }
 
-const checkOverlap = (newEvent) => {
+  const checkOverlap = (newEvent) => {
     console.log('checkOverlap called with newEvent:', newEvent);
     const newStart = new Date(`${newEvent.departureDate}T${newEvent.departureTime}`).getTime();
     const newEnd = new Date(`${newEvent.arrivalDate}T${newEvent.arrivalTime}`).getTime();
@@ -427,7 +534,7 @@ const checkOverlap = (newEvent) => {
     // reserveList(航路予約)をチェック
     for (const reserve of reserveList) {
         const reserveStart = new Date(reserve['airwaySections'][0]['startAt']).getTime();
-        const reserveEnd = new Date(reserve['airwaySections'][0]['endAt']).getTime();
+        const reserveEnd = new Date(reserve['airwaySections'][reserve['airwaySections'].length-1]['endAt']).getTime();
 
         if ((newStart >= reserveStart && newStart < reserveEnd) || 
             (newEnd > reserveStart && newEnd <= reserveEnd) || 
@@ -435,21 +542,21 @@ const checkOverlap = (newEvent) => {
             return 3; // 重複あり
         }
     }
-   
-    // portsReservationData(ポート予約)をチェック
-    const filteredPortsData = props.portsReservationData.data.filter(port => 
-      port.dronePortName === props.departurePort || port.dronePortName === props.arrivalPort
-    );
-    for (const reservation of filteredPortsData) {
-        const reservationStart = new Date(reservation.reservationTimeFrom).getTime();
-        const reservationEnd = new Date(reservation.reservationTimeTo).getTime();
 
-        if ((newStart >= reservationStart && newStart < reservationEnd) || 
-            (newEnd > reservationStart && newEnd <= reservationEnd) || 
-            (newStart <= reservationStart && newEnd >= reservationEnd)) {
-            return 3; // 重複あり
+    // ★ 他社予約（availabilityData）もチェック
+    for (const a of (props.availabilityData ?? [])) {
+      for (const sec of (a?.uaslSections ?? [])) {
+        const otherStart = new Date(sec.startAt).getTime();
+        const otherEnd   = new Date(sec.endAt).getTime();
+
+        if ((newStart >= otherStart && newStart < otherEnd) ||
+            (newEnd > otherStart && newEnd <= otherEnd) ||
+            (newStart <= otherStart && newEnd >= otherEnd)) {
+          return 3; // 重複あり
         }
+      }
     }
+   
     return 1; // 重複なし
   };
   
@@ -459,29 +566,30 @@ const checkOverlap = (newEvent) => {
         let flag = checkOverlap(props.newEvent);
         if (flag === 1) {
           emit('update-flag', flag);
-        const event = {
-          title: '',
-          start: `${props.newEvent.departureDate}T${props.newEvent.departureTime}`,
-          end: `${props.newEvent.arrivalDate}T${props.newEvent.arrivalTime}`,
-          color: '#333333BF',
-          textColor: '#FFFFFF',
-          classNames: 'airway-port-reserve',
 
-        };
-        // 既存のイベントを残しつつ、新しいイベントを更新
-        const existingEventIndex = events.value.findIndex(e => e.title === '');
-        if (existingEventIndex !== -1) {
-          events.value[existingEventIndex] = event;
+          //新規予約分
+          const event = {
+            title: '',
+            start: `${props.newEvent.departureDate}T${props.newEvent.departureTime}`,
+            end: `${props.newEvent.arrivalDate}T${props.newEvent.arrivalTime}`,
+            color: '#2C69FFE6',
+            textColor: '#FFFFFF',
+            classNames: 'airway-port-reserve',
+          };
+          // 既存のイベントを残しつつ、新しいイベントを更新
+          const existingEventIndex = events.value.findIndex(e => e.title === '');
+          if (existingEventIndex !== -1) {
+            events.value[existingEventIndex] = event;
+          } else {
+            events.value.push(event);
+          }
+          const calendarApi = fullCalendarRef.value.getApi();
+          const currentView = calendarApi.view;
+          setCustomTitle({ start: currentView.activeStart, end: currentView.activeEnd, view: currentView });
+          // departureDateに飛ぶ処理を追加
+          calendarApi.gotoDate(props.newEvent.departureDate);
         } else {
-          events.value.push(event);
-        }
-	      const calendarApi = fullCalendarRef.value.getApi();
-        const currentView = calendarApi.view;
-        setCustomTitle({ start: currentView.activeStart, end: currentView.activeEnd, view: currentView });
-        // departureDateに飛ぶ処理を追加
-        calendarApi.gotoDate(props.newEvent.departureDate);
-       } else {
-        const existingEventIndex = events.value.findIndex(e => e.title === '');
+          const existingEventIndex = events.value.findIndex(e => e.title === '');
           if (existingEventIndex !== -1) {
             events.value.splice(existingEventIndex, 1);
           }
@@ -489,7 +597,7 @@ const checkOverlap = (newEvent) => {
           const currentView = calendarApi.view;
           setCustomTitle({ start: currentView.activeStart, end: currentView.activeEnd, view: currentView });
           emit('update-flag', flag);       
-       }
+        }
       }
     };
 
@@ -507,6 +615,7 @@ const checkOverlap = (newEvent) => {
       newEvent,
       events,
       fullCalendarRef,
+      popupRef,
       showPopup,
       popupEvent,
       popupStyle,
@@ -521,8 +630,12 @@ const checkOverlap = (newEvent) => {
   background: #707070;
   color: #ffffff;
   padding: 10px;
-  width: 150px;
-  height: 150px;
+  width: max-content;
+  max-width: 200px;
+  min-width: 150px;
+  height: max-content;
+  min-height: 120px;
+  border-radius: 6px;
 }
 
 .dialog {
@@ -624,7 +737,7 @@ const checkOverlap = (newEvent) => {
 }
 
 .fc-theme-standard .fc-scrollgrid {
-  border: none; 
+  border: 1px solid #E1E5EB; 
 }
 
 .fc-theme-standard td, .fc-theme-standard th {
@@ -637,7 +750,7 @@ const checkOverlap = (newEvent) => {
 
 .fc-col-header-cell-cushion span {
   font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-14)/24px var(--unnamed-font-family-biz-udpgothic)!important;
-  font-size: 18px !important;;
+  font-size: 0.75rem !important;
   letter-spacing: var(--unnamed-character-spacing-0);
   color: var(--txt_-333333);
   text-align: center;
@@ -647,22 +760,12 @@ const checkOverlap = (newEvent) => {
 }
 
 .fc .fc-timegrid-col {
-  border: 1px solid #999999!important;
-}
-
-/*30分の線を消す*/
-.fc .fc-timegrid-slot.fc-timegrid-slot-lane.fc-timegrid-slot-minor {
-  border: none;
-}
-
-.fc-timegrid-slot.fc-timegrid-slot-label.fc-timegrid-slot-minor {
-  border-right: 1px solid #999999!important;
+  border: 1px solid #E1E5EB!important;
 }
 
 /*横ヘッダーの1時間の線を消す*/
 .fc .fc-timegrid-slot.fc-timegrid-slot-label.fc-scrollgrid-shrink {
-  border: none;
-  border-right: 1px solid #999999;
+  border: none!important;
 }
 
 /*横ヘッダーの30分の線を消す*/
@@ -670,21 +773,27 @@ const checkOverlap = (newEvent) => {
   border: none!important;
 }
 
-/*1時間の線を点線にする*/
+/*30分の線を破線にする*/
 .fc .fc-timegrid-slot {
-  border-top: 2px dotted #999999;
+  border-bottom: 1px dashed #E1E5EB;
+}
+
+/*1時間の線を実線にする*/
+.fc .fc-timegrid-slot {
+  border-top: 1px solid #E1E5EB;
 }
 
 .fc .fc-daygrid-day, .fc .fc-timegrid-axis, .fc .fc-timegrid-col {
- border:1px solid #999999;
+ border:1px solid #E1E5EB;
 }
 
 .fc .fc-col-header-cell {
-  border: 1px solid #999999;
+  border: 1px solid #E1E5EB;
 }
 
 .fc-timeGridWeek-view.fc-view.fc-timegrid {
   border: none;
+  border-right: 1px solid #E1E5EB;
 }
 
 .fc .fc-day-today {
@@ -692,7 +801,8 @@ const checkOverlap = (newEvent) => {
 }
 
 .fc-view-harness.fc-view-harness-active {
-  height: 650px!important;
+  min-height: 400px;
+  height: calc(100vh - 240px)!important;
 }
 
 .fc-scroller::-webkit-scrollbar {
@@ -709,17 +819,30 @@ const checkOverlap = (newEvent) => {
 .fc .fc-daygrid-day-number {
   color: #999999!important;
   text-decoration: none;
+  font-size: 0.75rem;
+  line-height: 1;
 }
 
 .fc-dayGridMonth-view.fc-view.fc-daygrid {
   border: 1px solid #999999;
 }
 
+.fc .fc-timegrid-slot-label-cushion {
+  font-family: BIZ UDPGothic;
+  font-weight: 400;
+  font-style: Regular;
+  font-size: 10px;
+  line-height: 10px;
+  letter-spacing: 0%;
+  text-align: right;
+  padding-top: 13px;
+}
+
 .fc-timegrid-event {
   border-radius: 0px;
 }
 
-.fc-event-time, .fc-event-title {
+.fc-event-time, .fc-event-title, .fc-event-purpose {
   font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-12)/16px var(--unnamed-font-family-biz-udpgothic)!important;
   letter-spacing: var(--unnamed-character-spacing-0);
 }
@@ -752,13 +875,15 @@ th.fc-col-header-cell:not(:first-child) {
   }
 }
 
-.airway-port-all, .airway-port-reserve, .aiway-all, .port-all, .airway-port-departure, .airway-port-arrival {
+.airway-port-all, .other-reservation, .airway-port-reserve, .aiway-all, .port-all, .airway-port-departure, .airway-port-arrival {
   position: relative; /* 擬似要素の位置を相対的に設定 */
   padding-left: 18px!important; /* 左側の余白を調整 */
+  border-radius: 6px;
 }
 
 
 .airway-port-all::before, .airway-port-all::after,
+.other-reservation::before, .other-reservation::after,
 .airway-port-reserve::before, .airway-port-reserve::after,
 .aiway-all::before, .port-all::before,
 .airway-port-departure::before, .airway-port-arrival::before
@@ -767,41 +892,66 @@ th.fc-col-header-cell:not(:first-child) {
   position: absolute;
   top: 3px; 
   bottom: 3px; 
-  width: 3px; 
+  width: 4px;
+  border-radius: 4px;
 }
 
 .airway-port-all::before, .aiway-all::before, .port-all::before,.airway-port-departure::before, .airway-port-arrival::before {
+  top: 16px;
+  bottom: 16px;
   left: 3px; /* 1本目の線の位置 */
-  background-color: #707070; 
+  background-color: #2C69FF;
 }
 
 .airway-port-all::after {
-  left: 8px; /* 2本目の線の位置 */
+  left: 3px; /* 2本目の線の位置 */
   background: linear-gradient(
     to bottom,
-    #707070 0%,
-    #707070 13px,
-    transparent 13px,
-    transparent calc(100% - 13px),
-    #707070 calc(100% - 13px),
-    #707070 100%
+    #2C69FF 0%,
+    #2C69FF 8px,
+    transparent 8px,
+    transparent calc(100% - 8px),
+    #2C69FF calc(100% - 8px),
+    #2C69FF 100%
+  ); 
+}
+
+.other-reservation::before {
+  top: 16px;
+  bottom: 16px;
+  left: 3px; /* 1本目の線の位置 */
+  background-color: #0E8C85;
+}
+
+.other-reservation::after {
+  left: 3px; /* 2本目の線の位置 */
+  background: linear-gradient(
+    to bottom,
+    #0E8C85 0%,
+    #0E8C85 8px,
+    transparent 8px,
+    transparent calc(100% - 8px),
+    #0E8C85 calc(100% - 8px),
+    #0E8C85 100%
   ); 
 }
 
 .airway-port-reserve::before {
+  top: 16px;
+  bottom: 16px;
   left: 3px; 
   background-color: #ffffff; 
 }
 
 .airway-port-reserve::after {
-  left: 8px; 
+  left: 3px;
   background: linear-gradient(
     to bottom,
     #ffffff 0%,
-    #ffffff 13px,
-    transparent 13px,
-    transparent calc(100% - 13px),
-    #ffffff calc(100% - 13px),
+    #ffffff 8px,
+    transparent 8px,
+    transparent calc(100% - 8px),
+    #ffffff calc(100% - 8px),
     #ffffff 100%
   ); 
 }
