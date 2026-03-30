@@ -24,6 +24,32 @@
               maxlength="200"
               @change="updatePlace"
             ></v-text-field>
+            <label class="drn_form__label">系統</label>
+            <v-select
+              density="compact"
+              variant="outlined"
+              :items="typeItems"
+              menu-icon="fa fa-sharp fa-regular fa-angle-down"
+              model-value="selectedType"
+              class="drn_form__select"
+              v-model="selectedTypes"
+              name="typeId"
+              id="typeIdField"
+              @update:modelValue="updatePlace"
+            ></v-select>
+            <label class="drn_form__label">地域</label>
+            <v-select
+              density="compact"
+              variant="outlined"
+              :items="regionItems"
+              menu-icon="fa fa-sharp fa-regular fa-angle-down"
+              model-value="selectedRegion"
+              class="drn_form__select"
+              v-model="selectedRegions"
+              name="regionId"
+              id="regionIdField"
+              @update:modelValue="updatePlace"
+            ></v-select>
             <label class="drn_form__label">エリア</label>
             <v-select
               density="compact"
@@ -52,7 +78,6 @@
 </template>
 
 <script>
-import axios from 'axios';
 import MapComponent from "~/components/map/showArea.vue";
 
 export default {
@@ -70,27 +95,43 @@ export default {
       rangeName: this.selectedName,
       areaName: this.selectedArea,
       selectedName: '', 
+      selectedType: '',
+      selectedRegion: '',
       selectedArea: '',
+      selectedTypes: [], // v-select 選択結果保存用
+      selectedRegions: [], // v-select 選択結果保存用
       selectedAreas: [], // v-select 選択結果保存用
       selectedPurpose: null,
       areaInfo:{},
       place: {
           rangeName: this.selectedName,
+          typeId: this.selectedType,
+          regionId: this.selectedRegion,
           areaName: this.selectedArea,
           areaInfo: this.areaInfo
       },
       routes: [],
       filteredRoutes: [],
       filteredRouteItems: [], // v-select 表示選択肢用
+      typeItems: [], // v-select 表示選択肢用
+      regionItems: [], // v-select 表示選択肢用
       stepNo: this.stepNo,
     };
   },
   methods: {
     updatePlace() {
+      if (typeof(this.selectedTypes) === 'string') {
+        this.selectedType = this.selectedTypes;
+      }
+      if (typeof(this.selectedRegions) === 'string') {
+        this.selectedRegion = this.selectedRegions;
+      }
       if (typeof(this.selectedAreas) === 'string') {
         this.selectedArea = this.selectedAreas;
       }
       this.place.rangeName = this.selectedName
+      this.place.typeId = this.selectedType
+      this.place.regionId = this.selectedRegion
       this.place.areaName = this.selectedArea
       this.place.areaInfo = this.areaInfo
       this.$emit('update:place', this.place);
@@ -98,7 +139,7 @@ export default {
   },
   mounted() {
     // JSONファイルを読み込む
-    axios.get('/api/getAreaJsonData')
+    $fetch('/api/getAreaJsonData')
       .then(response => {
       // JSONデータの取得が成功した場合、routesに代入
       console.log(response.data)
@@ -116,6 +157,12 @@ export default {
       }
       this.selectedArea = this.filteredRoutes[0].name
       this.selectedAreas = this.selectedArea
+      this.typeItems = useRuntimeConfig().public.typeList;
+      this.selectedType = this.typeItems[0].value
+      this.selectedTypes = this.selectedType
+      this.regionItems = useRuntimeConfig().public.regionList;
+      this.selectedRegion = this.regionItems[0].value
+      this.selectedRegions = this.selectedRegion
       this.updatePlace()
     })
     .catch(error => {
