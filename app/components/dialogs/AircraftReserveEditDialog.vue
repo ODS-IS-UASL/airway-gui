@@ -113,10 +113,12 @@ const loadingData = async () => {
   // spinerOn
   await loadOn()
   let result: EventInfo[] = []
-  const getByPkResult = await useRestApiReserveAircraftGetByPk(reserveId.value)
+  const getByPkResult = await $fetch(`/api/drone/aircraft/reserve/detail/${reserveId.value}`, { 
+    method: 'GET',
+  });
   if (utils.isNormalStatusResponse(getByPkResult.status)) {
     // 取得成功時処理
-    const aircraftReserveInfo = await getByPkResult.json() // 詳細取得処理で取得した機体予約情報
+    const aircraftReserveInfo = getByPkResult.data // 詳細取得処理で取得した機体予約情報
     const startDate = aircraftReserveInfo.reservationTimeFrom // 予約開始日時
     const isoStartDate = $luxon.fromISO(startDate) // 予約開始日時(ISO形式)
     const firstDayOfTheWeek = isoStartDate.startOf('week') // 予約開始日時を含む週の開始日を取得
@@ -129,9 +131,12 @@ const loadingData = async () => {
     const utcLastDayOfTheWeek = utils.convertJSTtoUTC(isoLastDayOfTheWeek!)
     aircraftIdList.value.push(aircraftId.value)
     const params: AircraftReserveGetListRequestQueryParams = { aircraftId: aircraftId.value, timeFrom: utcFirstDayOfTheWeek, timeTo: utcLastDayOfTheWeek }
-    const getListResult = await useRestApiReserveAircraftGetList(params)
+    const getListResult = await $fetch('/api/drone/aircraft/reserve/list', { 
+      method: 'GET',
+      query: params
+    });
     if (utils.isNormalStatusResponse(getListResult.status)) {
-      const { data: dataList } = await getListResult.json()
+      const { data: dataList } = getListResult.data
       result = dataList.map((data: any) => {
         return {
           id: data.aircraftReservationId,
@@ -145,9 +150,9 @@ const loadingData = async () => {
     }
     else {
     // 取得失敗時処理
-      const responseBody = await getListResult.json()
+      const responseBody = getListResult.data
       getFailedAircraftInfoDialogVisible.value = true
-      if (responseBody.errorDetail) {
+      if (responseBody?.errorDetail) {
         errorDetail.value = `機体予約情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -157,9 +162,9 @@ const loadingData = async () => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = await getByPkResult.json()
+    const responseBody = getByPkResult.data
     infoDetailGetFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約詳細情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -171,17 +176,19 @@ const loadingData = async () => {
 
 // データ取得処理(機体予約情報詳細取得API)
 const loadingReservationDetailData = async (params: any) => {
-  const apiResult = await useRestApiReserveAircraftGetByPk(params)
+  const apiResult = await $fetch(`/api/drone/aircraft/reserve/detail/${params}`, { 
+    method: 'GET',
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return await apiResult.json() as AircraftReserveGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     infoDetailGetFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約詳細情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -206,9 +213,12 @@ const changeWeek = async (days: { fromTime: string, toTime: string }) => {
   // カレンダーで日時が変更された際に再度取得する
   let result: EventInfo[] = []
   const params = { aircraftId: aircraftId.value, timeFrom: days.fromTime, timeTo: days.toTime }
-  const getListResult = await useRestApiReserveAircraftGetList(params)
+  const getListResult = await $fetch('/api/drone/aircraft/reserve/list', { 
+    method: 'GET',
+    query: params
+  });
   if (utils.isNormalStatusResponse(getListResult.status)) {
-    const { data: dataList } = await getListResult.json()
+    const { data: dataList } = getListResult.data
     result = dataList.map((data: any) => {
       return {
         id: data.aircraftReservationId,
@@ -222,9 +232,9 @@ const changeWeek = async (days: { fromTime: string, toTime: string }) => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = await getListResult.json()
+    const responseBody = getListResult.data
     getFailedAircraftInfoDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
