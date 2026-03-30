@@ -264,14 +264,6 @@ const sendApiRequest = async (coordinates) => {
     return;
   }
 
-  const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-  const url = `${miscApiBaseUrl}/flightProhibitedAreaReceiver`;
-  const headers = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-
   const today = new Date();
 
   // 年、月、日を取得
@@ -292,8 +284,10 @@ const sendApiRequest = async (coordinates) => {
     if (!process.client) {
       return;
     }
-    const response = await axios_post(url, body, headers);
-    console.log(response);
+    const response = await $fetch('/api/misc/flightProhibitedAreaReceiver', { 
+      method: 'POST',
+      body: body
+    });
     if (Object.keys(response).length === 0) {
       alert("飛行禁止エリア表示を利用するためにはDIPSログインを行ってください。");
       // 何回も出てしまうので、チェックボックスはすべてfalseにする
