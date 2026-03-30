@@ -355,7 +355,11 @@ const updateConfirm = () => {
 // 離発着場予約情報更新
 const updateReservationData = async () => {
   isLoading.value = true
-  const response = await useRestApiReserveDronePortUpdateByPk(update.value.dronePortReservationId, update.value as DronePortReserveUpdateRequestParams)
+  update.value.operatorId = localStorage.getItem('uasl:user:operatorId');
+  const response = await $fetch(`/api/drone/droneport/reserve`, { 
+    method: 'PUT',
+    body: update.value
+  });
   isLoading.value = false
 
   if (utils.isNormalStatusResponse(response.status)) {
@@ -363,8 +367,8 @@ const updateReservationData = async () => {
     updateSuccessDialogVisible.value = true
   }
   else {
-    const responseBody = await response.json() as CommonResponse
-    if (responseBody.errorDetail) {
+    const responseBody = response.data
+    if (responseBody?.errorDetail) {
       dialogMessage.value = `離着陸場予約情報の更新に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
