@@ -8,9 +8,9 @@ const props = defineProps({
   error: Object as () => NuxtError,
 })
 
-const handleError = () => {
+const handleError = async () => {
   // Cookie削除
-  document.cookie = 'auth.token=; max-age=0; path=/';
+  await $fetch('/api/auth/logout');
   // Nuxt3エラークリア
   clearError({ redirect: '/login' });
 };
