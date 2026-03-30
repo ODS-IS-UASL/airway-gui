@@ -7,6 +7,6 @@
 export const useGeoJsonGetSingleAltitude = async (lon, lat) => {
   let res;
   let url = `https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php?lon=${lon}&lat=${lat}`;
-  res = await getUrl(url);
+  res = await $fetch(url)
   return res.elevation;
 }
