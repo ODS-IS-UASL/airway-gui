@@ -18,10 +18,14 @@ export default {
     return {
       cookie_role: null,
       role: null,
+      airwayId: null,
     }
   },
   async created() {
     if (process.client) {
+      // クエリパラメータから選択航路IDを取得
+      const route = useRoute();
+      this.airwayId = route.query.airwayId ?? null;
       // ロールチェック
       const ownpage_role = ["1","2","3"];
       this.cookie_role = await roleVerification(ownpage_role);
@@ -62,6 +66,6 @@ export default {
     <h1 class="u-invisible">運航状況</h1>
 
     <!-- 全画面マップ -->
-    <AirwayStatus :role="role" :cookie_role="cookie_role"/>
+    <AirwayStatus :role="role" :cookie_role="cookie_role" :airwayId="airwayId"/>
   </main>
 </template>
