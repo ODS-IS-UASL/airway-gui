@@ -5,6 +5,11 @@ import CommonDialog from '~/components/dialogs/CommonDialog.vue'
 import ReferenceImagePreview from '~/components/register/ReferenceImagePreview.vue'
 import { utils } from '~/utils/utils'
 import PageNavigation from '~/components/navigation/pageNavigation.vue'
+// 料金表管理改修  Start
+import PriceInfoManager from '~/components/price/PriceInfoManager.vue'
+import { type PriceInfo } from '~/components/price/PriceInfoManager.vue'
+import { nanoid } from 'nanoid'
+// 料金表管理改修  End
 
 definePageMeta({
   layout: 'system-global-navigation',
@@ -43,6 +48,11 @@ const showActiveStatus = ref()
 const showScheduledStatus = ref()
 const showInactiveTimeFrom = ref()
 const showInactiveTimeTo = ref()
+
+// 料金表管理改修  Start
+// 料金表情報用
+const priceInfos = ref<PriceInfo[]>([])
+// 料金表管理改修  End
 
 // 機体の型定義
 interface Aircraft {
@@ -98,6 +108,10 @@ const formData = ref<Record<string, any>>({
   imageData: '', // base64Text
   inactiveTimeFrom: null, // 使用不可開始日時
   inactiveTimeTo: null, // 使用不可終了日時
+  // 料金表管理改修  Start
+  publicFlag: false, // 公開可否フラグ
+  priceInfos: [], // 料金表情報
+  // 料金表管理改修  End
 })
 const formSetting = reactive({
   // ラベル名・必須・最大長・セレクトリスト内容・チェックボックス内容設定用
@@ -117,6 +131,9 @@ const formSetting = reactive({
   scheduledStatus: { label: '予定された動作状況', required: false },
   inactiveTimeFrom: { label: '使用不可開始日時', required: true },
   inactiveTimeTo: { label: '使用不可終了日時', required: true },
+  // 料金表管理改修  Start
+  publicFlag: { label: '公開可', maxLength: '', required: false },
+  // 料金表管理改修  End
 })
 
 /** バリデーションチェック */
@@ -158,14 +175,18 @@ const registerDronePortInfo = async () => {
     isLoading.value = true
     registerConfirmDialogVisible.value = false
     await toFixedActiveStatusInfo(formData.value.activeStatus)
-    const response = await useRestApiDronePortRegister(formData.value as DronePortRegisterRequestParams)
+    formData.value.operatorId = localStorage.getItem('uasl:user:operatorId');
+    const response = await $fetch('/api/drone/droneport/info', { 
+      method: 'POST',
+      body: formData.value
+    });
     isLoading.value = false
     if (utils.isNormalStatusResponse(response.status)) {
       registerSuccessDialogVisible.value = true
     }
     else {
-      const responseBody = await response.json()
-      if (responseBody.errorDetail) {
+      const responseBody = response.data
+      if (responseBody?.errorDetail) {
         registerFailedMsg.value = `離着陸場情報の登録に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -196,14 +217,18 @@ const updateDronePortInfo = async () => {
       inactiveTimeTo.value = showInactiveTimeTo.value
     }
     await toFixedActiveStatusInfo(formData.value.activeStatus)
-    const response = await useRestApiDronePortUpdateByPk(formData.value.dronePortId, formData.value as DronePortUpdateByPkRequestParams)
+    formData.value.operatorId = localStorage.getItem('uasl:user:operatorId');
+    const response = await $fetch('/api/drone/droneport/info', { 
+      method: 'PUT',
+      body: formData.value
+    });
     isLoading.value = false
     if (utils.isNormalStatusResponse(response.status)) {
       updateSuccessDialogVisible.value = true
     }
     else {
-      const responseBody = await response.json()
-      if (responseBody.errorDetail) {
+      const responseBody = response.data
+      if (responseBody?.errorDetail) {
         updateFailedMsg.value = `離着陸場情報の更新に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -222,14 +247,18 @@ const updateDronePortInfo = async () => {
 const deleteDronePortInfo = async () => {
   try {
     isLoading.value = true
-    const response = await useRestApiDronePortDeleteByPk(formData.value.dronePortId)
+    const operatorId = localStorage.getItem('uasl:user:operatorId');
+    const response = await $fetch(`/api/drone/droneport/info/${formData.value.dronePortId}`, { 
+      method: 'DELETE',
+      body: { operatorId: operatorId }
+    });
     isLoading.value = false
     if (utils.isNormalStatusResponse(response.status)) {
       deleteSuccessDialogVisible.value = true
     }
     else {
-      const responseBody = await response.json()
-      if (responseBody.errorDetail) {
+      const responseBody = apiResult.data
+      if (responseBody?.errorDetail) {
         deleteFailedMsg.value = `離着陸場情報の削除に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -248,10 +277,15 @@ const deleteDronePortInfo = async () => {
 const getDronePortInfo = async () => {
   if (isRegister.value) return
   try {
-    const response = await useRestApiDronePortGetByPk(dronPortId)
+    // 料金表管理改修  Start
+    const response = await $fetch(`/api/drone/droneport/info/detail/${dronPortId}`, { 
+      method: 'GET',
+      query: { isRequiredPriceInfo: true }
+    });
+    // 料金表管理改修  End
     if (utils.isNormalStatusResponse(response.status)) {
       // 更新画面の場合、ドローンポート詳細情報をバインド
-      const dronePortInfo = await response.json()
+      const dronePortInfo = response.data
       formData.value.dronePortId = dronePortInfo.dronePortId
       formData.value.dronePortName = dronePortInfo.dronePortName
       formData.value.address = dronePortInfo.address
@@ -273,11 +307,29 @@ const getDronePortInfo = async () => {
       showScheduledStatus.value = dronePortInfo.scheduledStatus
       showInactiveTimeFrom.value = utils.isNullUndefined(dronePortInfo.inactiveTimeFrom) ? null : utils.toFormatJSTtime(dronePortInfo.inactiveTimeFrom, constants.format.datetimePicker, 'local')
       showInactiveTimeTo.value = utils.isNullUndefined(dronePortInfo.inactiveTimeTo) ? null : utils.toFormatJSTtime(dronePortInfo.inactiveTimeTo, constants.format.datetimePicker, 'local')
+      // 料金表管理改修  Start
+      // 料金表情報
+      formData.value.publicFlag = dronePortInfo.publicFlag
+      priceInfos.value = (dronePortInfo.priceInfos ?? [])
+      .slice()
+      .sort((a: PriceInfo, b: PriceInfo) => Number(a.priority ?? 0) - Number(b.priority ?? 0))
+      .map((item: PriceInfo) => ({
+        _key: nanoid(),
+        priceId: item.priceId,
+        price: item.price,
+        pricePerUnit: item.pricePerUnit,
+        priceType: item.priceType,
+        priority: item.priority,
+        effectiveStartTime: utils.isNullUndefined(item.effectiveStartTime) ? '' : utils.toFormatJSTtime(item.effectiveStartTime, constants.format.datetimePicker, 'local'),
+        effectiveEndTime: utils.isNullUndefined(item.effectiveEndTime) ? '' : utils.toFormatJSTtime(item.effectiveEndTime, constants.format.datetimePicker, 'local'),
+        processingType: 2,
+      }))
+      // 料金表管理改修  End
     }
     else {
-      const responseBody = await response.json()
+      const responseBody = response.data
       infoGetFailedDialogVisible.value = true
-      if (responseBody.errorDetail) {
+      if (responseBody?.errorDetail) {
         infoGetFailedMsg.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -371,6 +423,15 @@ const onUpdateButtonClick = async () => {
     updateConfirmDialogVisible.value = true
   }
 }
+// 料金表管理改修  Start
+/**
+ * 料金表情報を formData に反映する
+ */
+const onPriceInfosChange = (submitList: any[]) => {
+  formData.value.priceInfos = submitList
+  changeFormData()
+}
+// 料金表管理改修  End
 /**
  * 削除ボタン押下時処理
  */
@@ -494,11 +555,13 @@ const toFixedActiveStatusInfo = (activeStatus: number) => {
 
 // データ取得処理
 const getAircraftInfo = async () => {
-  const apiResult = await useRestApiAircraftGetList()
+  const apiResult = await $fetch('/api/drone/aircraft/info/list', { 
+    method: 'GET',
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    const resultJson = (await apiResult.json()) as AircraftGetListResponse
+    const resultJson = apiResult.data
     const dataList = resultJson.data // 検索結果
     const newDataList = dataList.map((data: any) => {
       return {
@@ -510,9 +573,9 @@ const getAircraftInfo = async () => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     getFailedAircraftListDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       getFailedAircraftListMsg.value = `機体情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -593,7 +656,7 @@ watch(() => formData.value.portType, (newVal) => {
                       </v-col>
                     </v-row>
                   </v-col>
-                  <v-col>
+                  <v-col cols="9">
                     <v-row>
                       <v-col cols="4">
                         <!-- 離着陸場名 -->
@@ -830,6 +893,26 @@ watch(() => formData.value.portType, (newVal) => {
                           @change="changeFormData"
                         />
                       </v-col>
+                      <!-- 料金表管理改修  Start -->
+                      <v-col cols="4" style="align-content: center;" class="d-flex">
+                        <!-- 公開可否フラグ -->
+                        <label class="form-label">
+                          <b
+                            v-if="formSetting.publicFlag.required"
+                            style="color: red"
+                          >*</b>
+                        </label>
+                        <span style="display: flex;">
+                          <v-checkbox
+                            v-model="formData.publicFlag"
+                            hide-details="auto"
+                            :label="formSetting.publicFlag.label"
+                            class="mx-2"
+                            @change="changeFormData"
+                          />
+                        </span>
+                      </v-col>
+                      <!-- 料金表管理改修  End -->
                     </v-row>
                     <v-row>
                       <v-col cols="4">
@@ -1072,6 +1155,13 @@ watch(() => formData.value.portType, (newVal) => {
                         </v-card>
                       </v-col>
                     </v-row>
+                    <!-- 料金表管理改修  Start -->
+                    <PriceInfoManager
+                      v-model="priceInfos"
+                      :resource-type="2"
+                      @change="onPriceInfosChange"
+                    />
+                    <!-- 料金表管理改修  End -->
                   </v-col>
                 </v-row>
               </v-form>
