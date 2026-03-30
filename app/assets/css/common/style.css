@@ -1071,6 +1071,8 @@ input, optgroup, select, textarea {
 }
 .drn_form__body {
   width: 100%;
+  height: calc(100vh - 300px);
+  overflow: auto;
 }
 .drn_form__body:not(:last-child) {
   margin-bottom: 20px;
