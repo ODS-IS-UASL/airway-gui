@@ -252,17 +252,19 @@ const convertDispScheduledStatus = (scheduledStatus: number, inactiveTimeFrom: s
  */
 const getDronePortEnvironment = async (dronePortId: string) => {
   try {
-    const apiResult = await useRestApiEnvironmentDronePortGetByPk(dronePortId)
+    const apiResult = await $fetch(`/api/drone/droneport/environment/${dronePortId}`, { 
+      method: 'GET',
+    });
     if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-      const dataList = await apiResult.json() as DronePortGetEnvironmentResponse
+      const dataList = apiResult.data
       return dataList
     }
     else {
     // 取得失敗時処理
-      const responseBody = await apiResult.json()
+      const responseBody = apiResult.data
       getFailedDronePortEnvironmentDialogVisible.value = true
-      if (responseBody.errorDetail) {
+      if (responseBody?.errorDetail) {
         commonDialogMessage.value = `離着陸場周辺情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
       }
       else {
@@ -282,18 +284,21 @@ const getDronePortEnvironment = async (dronePortId: string) => {
  */
 const getDronePortDetail = async (dronePortId: string) => {
   try {
-    const apiResult = await useRestApiDronePortGetByPk(dronePortId)
+    const apiResult = await $fetch(`/api/drone/droneport/info/detail/${dronePortId}`, { 
+      method: 'GET',
+      query: { isRequiredPriceInfo: false }
+    });
     if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-      const dataList = await apiResult.json() as DronePortGetByPkResponse
+      const dataList = apiResult.data
       return dataList
     }
     else {
-    // 取得失敗時処理
-      const responseBody = await apiResult.json()
+      // 取得失敗時処理
+      const responseBody = apiResult.data
       getByPkFailedDialogVisible.value = true
-      if (responseBody.errorDetail) {
-        commonDialogMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+      if (responseBody?.errorDetail) {
+        commonDialogMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${apiResult.data.errorDetail})`
       }
       else {
         commonDialogMessage.value = `離着陸場情報の取得に失敗しました。`
