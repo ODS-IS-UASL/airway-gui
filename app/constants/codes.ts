@@ -12,6 +12,9 @@ export type Codes = {
   dronPortsHeaders: any
   obstacleDetected: any
   usageTypeOfPort: any
+  // 料金表管理改修  Start
+  priceType: any
+  // 料金表管理改修  End
 }
 
 export type CodeRow = {
@@ -320,4 +323,37 @@ export const codes: Codes = {
       title: 'その他',
     },
   },
+  // 料金表管理改修  Start
+  // 料金タイプ
+  priceType: {
+    timePerSecond: {
+      value: 1,
+      title: '時間(秒)課金',
+    },
+    timePerMinute: {
+      value: 2,
+      title: '時間(分)課金',
+    },
+    timePerHour: {
+      value: 3,
+      title: '時間(時)課金',
+    },
+    timePerDay: {
+      value: 4,
+      title: '時間(日)課金',
+    },
+    timePerWeek: {
+      value: 5,
+      title: '時間(週)課金',
+    },
+    timePerMonth: {
+      value: 6,
+      title: '時間(月)課金',
+    },
+    timePerYear: {
+      value: 7,
+      title: '時間(年)課金',
+    },
+  }
+  // 料金表管理改修  End
 } as const
