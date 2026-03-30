@@ -16,6 +16,7 @@
   import iconUrl from "../assets/css/img/dummyImg/dummy_legendIcon_waypoint.svg";
   import MapLayerControl from '../mapLayerControl.vue';
   import MapProhibitedAreaControl from '../mapProhibitedAreaControl.vue';
+  import { unionFallToleranceRanges } from '~/utils/airway'
 
   const props = defineProps({
     area: {
@@ -50,6 +51,7 @@
 
   const MapLayerControlMounted = ref(true);
   const stepNo = ref(props.stepNo);
+  const selectedFallToleranceRange = ref(null);
 
   // 天候情報の変更完了ハンドラ
   const handleWeatherChanged = (changeed) => {
@@ -64,6 +66,16 @@
     MapLayerControlMounted.value = false;
     console.log(`MapLayerControl_Mounted: ${MapLayerControlMounted.value}`);
   }
+
+  // 選択された最大落下範囲のリセット
+  const resetSelectedFallToleranceRange = () => {
+    if (selectedFallToleranceRange.value) {
+      l_map.value.removeLayer(selectedFallToleranceRange.value);
+    }
+  }
+  defineExpose({
+    resetSelectedFallToleranceRange
+  })
 
   onMounted(async () => {
     const leafletModule = await import('leaflet');
@@ -89,16 +101,11 @@
 
     l_map.value.zoomControl.setPosition('topleft');
 
-    // 最大落下許容範囲をすべて表示
-    props.rangeInfo['fallToleranceRanges'].forEach((range) => {
-      let markerList = [];
-      if (range['geometry']['coordinates'].length) {
-          range['geometry']['coordinates'][0].forEach((coord) => {
-            markerList.push([coord[1], coord[0]]);
-          })
-        insideLatLangs.push(markerList)
-      }
-    });
+    // 最大落下範囲を結合してすべて表示
+    const allPolygons = unionFallToleranceRanges(props.rangeInfo['fallToleranceRanges']);
+    for (let i = 0; i < allPolygons.length; i++) {
+      insideLatLangs.push(allPolygons[i].geometry.coordinates[0])
+    }
     polygon.push(insideLatLangs);
     polygon.push(outerLatLangs);
     L.polygon(polygon, {
@@ -107,14 +114,14 @@
       fillOpacity: 0.6
     }).addTo(l_map.value);
     
-    await drawAirLine();
+    await drawAirLine(l_map.value, "uasl-list");
 
     l_map.value.on('moveend', async (event) => {
       console.log(`MapLayerControlMounted: ${MapLayerControlMounted.value}`);
       if (!MapLayerControlMounted.value) {
         console.log(`map moved:${event}`);
         map_moveend.value = true;
-        await drawAirLine();
+        await drawAirLine(l_map.value, "uasl-list");
       }
     });
   })
@@ -132,11 +139,11 @@
     })
   })
 
-  // 最大落下許容範囲にフォーカス
+  // 最大落下範囲にフォーカス
   watch(() => props.rangeId, (newData) => {
     console.log(newData);
     
-    // 最大落下許容範囲を特定する
+    // 最大落下範囲を特定する
     props.rangeInfo['fallToleranceRanges'].forEach((range) => {
       if (range['fallToleranceRangeId'] === newData) {
         let markerList = [];
@@ -145,94 +152,22 @@
             markerList.push([coord[1], coord[0]]);
           })
           l_map.value.fitBounds(markerList);
+          // 切り替え
+          if (selectedFallToleranceRange.value) {
+            l_map.value.removeLayer(selectedFallToleranceRange.value);
+          }
+          // 結合した場合にどの最大落下範囲かがわからないため強調する
+          selectedFallToleranceRange.value = L.polygon(markerList, {
+            color: "rgb(44, 105, 255)",
+            weight: 3,
+            opacity: 1,
+            fillColor: "rgb(44, 105, 255)",
+            fillOpacity: 0.3
+          }).addTo(l_map.value);
         }
       }
     });
   });
-
-  async function drawAirLine() {
-
-    const bounds = l_map.value.getBounds();
-    const northwest = bounds.getNorthWest();
-    const southeast = bounds.getSouthEast();
-
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const airwayUrl = `${airwayApiBaseUrl}/airway-list`;
-
-    const left = northwest.lng;
-    const right = southeast.lng;
-    const upper = northwest.lat;
-    const lower = southeast.lat;
-
-    const data = {
-      point1:  `${left},${lower}`,
-      point2:  `${right},${lower}`,
-      point3:  `${right},${upper}`,
-      point4:  `${left},${upper}`
-    }
-
-    const airwayRes = await axios_get(airwayUrl, data, {});
-    console.log(airwayRes);
-    if(airwayRes.status !== 200) {
-      return;
-    }
-
-    const airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
-    for(let i=0; i<airwayData.airway.airways.length; i++){
-      // 座標を格納するリスト
-      const allCoordinates = [];
-      const normalData = { ...airwayData.airway.airways[i] };
-      // 座標を抽出
-      normalData.airwayJunctions.forEach((point) => {
-        point["airways"].forEach((coordinates) => {
-          const coords = coordinates["airway"]["geometry"]["coordinates"];
-          if (Array.isArray(coords)) {
-            allCoordinates.push(coords);
-          }
-        });
-      });
-      
-      // ポリライン用の座標を計算（平均座標を使用）
-      const polyline = [];
-      let count = 0;
-      allCoordinates.forEach((coords) => {
-        let x = 0;
-        let y = 0;
-        // 矩形の座標は 5 点だが、計算に使うのは 4 点
-        for (let i = 0; i < 4; i++) {
-          if (coords[i][1] !== undefined && coords[i][0] !== undefined) {
-            x += coords[i][1];
-            y += coords[i][0];
-          }
-        }
-        x /= 4;
-        y /= 4;
-
-        polyline.push([x, y]);
-        count += 1;
-      });
-
-      // 地図にポリラインを描画
-      if (polyline.length > 0) {
-        L.polyline(polyline, {
-          color: "#000000",
-          weight: 8
-        }).addTo(l_map.value);
-
-        L.polyline(polyline, {
-          color: "#FFFFFF",
-          weight: 7
-        }).addTo(l_map.value);
-      }
-      polyline.forEach(markerCoords => {
-        const icon = L.icon({
-          iconUrl,
-          iconSize: [15, 15],
-        });
-        L.marker(markerCoords, { icon }).addTo(l_map.value);
-      });
-    }  
-  }
 
 </script>
 
