@@ -107,10 +107,13 @@ const onSearchButtonClick = async () => {
 const loadingData = async () => {
   // spinerOn
   await loadOn()
-  const apiResult = await useRestApiReserveDronePortGetList(params)
+  const apiResult = await $fetch(`/api/drone/droneport/reserve/list`, { 
+    method: 'GET',
+    query: params
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    const resultJson = (await apiResult.json()) as DronePortReserveGetListResponse
+    const resultJson = apiResult.data
     const dataList = resultJson.data // 検索結果
     lastPage.value = resultJson.lastPage // 最終ページ
     totalItems.value = resultJson.total // 取得データ総件数
@@ -132,9 +135,9 @@ const loadingData = async () => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = (await apiResult.json()) as CommonResponse
+    const responseBody = apiResult.data
     getFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `離着陸場予約情報一覧の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -146,21 +149,24 @@ const loadingData = async () => {
 
 // データ取得処理(離着陸場情報詳細取得API)
 const loadingDetailData = async (params: any) => {
-  const apiResult = await useRestApiDronePortGetByPk(params)
+  const apiResult = await $fetch(`/api/drone/droneport/info/detail/${params}`, { 
+    method: 'GET',
+    query: { isRequiredPriceInfo: false }
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return (await apiResult.json()) as DronePortGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = (await apiResult.json()) as CommonResponse
+    const responseBody = apiResult.data
     getByPkFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
-      errorDetail.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+      errorDetail.value = `離着陸場情報の取得に失敗しました。(エラー詳細：)`
     }
   }
 }
@@ -614,6 +620,9 @@ const onRowClick = async (event: any, row: any) => {
   position: -webkit-sticky !important;
   right: 0px;
   background-color: white;
+  /* 予約変更は非表示にする start */
+  display: none;
+  /* 予約変更は非表示にする end */
 }
 
 .droneport-reserve-list >>> tr td:nth-child(9) {
@@ -623,6 +632,9 @@ const onRowClick = async (event: any, row: any) => {
   right: 0px;
   background-color: white;
   transition: background-color 0s;
+  /* 予約変更は非表示にする start */
+  display: none;
+  /* 予約変更は非表示にする end */
 }
 
 .droneport-reserve-list {
