@@ -7,54 +7,6 @@
   <!-- コンテンツ -->
   <main id="main" class="b-pageMain">
     <div class="b-pageContentHasSubMenu">
-      <!-- モーダルウィンドウ -->
-      <div v-if="showStakeholdersPopup" class="popup">
-        <div class="item-center">
-          <v-data-table
-            v-model:items-per-page="itemsPerPage"
-            :items="stakeholders"
-            item-value="operatorId"
-            item-key="operatorId"
-            class="elevation-1"
-            hide-default-header
-            hide-default-footer
-            style="max-height: 400px; overflow-y: auto;"
-            :items-per-page-options="[5, 10, 15, 20]"
-          >
-            <template v-slot:top>
-              <thead>
-                <tr>
-                  <th style="width: 100px; text-align: center; align-items: center;">
-                    <v-checkbox
-                      v-model="stakeholdersAllSelected"
-                      @change="toggleSelectAll"
-                    ></v-checkbox>
-                  </th>
-                  <th style="width: 300px; text-align: center; align-items: center;">事業者・会社名</th>
-                  <th style="width: 300px; text-align: center; align-items: center;">区分</th>
-                </tr>
-              </thead>
-            </template>
-
-            <template v-slot:item="{ item }">
-              <tr>
-                <td style="width: 100px; text-align: center;table-layout: fixed;">
-                  <v-checkbox
-                    v-model="stakeholdersSelected"
-                    :value="item.operatorId"
-                    @click.stop
-                  ></v-checkbox>
-                </td>
-                <td style="width: 300px; text-align: left;">{{ item.operatorName }}</td>
-                <td style="width: 300px; text-align: left;">{{ item.roleList }}</td>
-              </tr>
-            </template>
-          </v-data-table>
-        </div>
-        <div class="item-center">
-          <input type="button" class="e-button-add" value="登録" @click="stakeholdersRegister" />
-        </div>      
-      </div>
 
     <!-- メインコンテンツ -->
     <div class="b-pageContentHasNavigation">
@@ -102,21 +54,6 @@
                 <th class="drn_table__label">航路区画</th>
                 <td class="drn_table__data">{{ airwayJunctionRange }}</td>
               </tr>
-              <tr><td class="drn_table__space"></td></tr>
-              <tr class="drn_table__row">
-                <th class="drn_table__label">関係者通知</th>
-                <td class="drn_table__data">
-                  {{ stakeholdersText }}
-                  <V-btn
-                    rounded="pill"
-                    variant="outlined"
-                    class="drn_btn drn_btn--default"
-                    @click="togglePopup"
-                  >
-                    変更
-                  </v-btn>
-                </td>
-              </tr>
             </tbody>
           </table>
           <v-divider class="drn_divider"></v-divider>
@@ -125,11 +62,20 @@
               <tr class="drn_table__row">
                 <th class="drn_table__label">航路区間</th>
                 <td class="drn_table__data">
-                  <v-timeline side="end" truncate-line="both" size="x-small" class="drn_timeline drn_timeline--route">
-                    <v-timeline-item v-for="(item, index) in airwayJunctions" :key="index" class="drn_timeline__item">
-                      <span class="drn_timeline__title">{{ item.airwayJunctionName }}</span>
-                    </v-timeline-item>
-                  </v-timeline>
+                  <div class="detail-waypoint-list">
+                    <template v-for="(item, index) in combinedSections" :key="index">
+                      <div v-if="index % 2 === 0" class="detail-wl-wp">
+                        <div class="detail-wl-left">
+                          <div class="detail-wl-icon-wrap" v-html="sidebarIcon(item.id)"></div>
+                        </div>
+                        <span class="detail-wl-wp-name">{{ item.name }}</span>
+                      </div>
+                      <div v-else class="detail-wl-sec">
+                        <div class="detail-wl-left"></div>
+                        <span class="detail-wl-sec-name">{{ item.name }}</span>
+                      </div>
+                    </template>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -143,11 +89,7 @@
               </tr>
               <tr><td class="drn_table__space"></td></tr>
               <tr class="drn_table__row">
-                <th class="drn_table__label">航路運営者</th>
-                <td class="drn_table__data">{{ airwayOperator }}</td>
-              </tr>
-              <tr><td class="drn_table__space"></td></tr>
-              <tr class="drn_table__row">
+
                 <th class="drn_table__label">申請日</th>
                 <td class="drn_table__data">{{ create_date }}</td>
               </tr>
@@ -155,7 +97,7 @@
           </table>
         </v-sheet>
         <v-sheet rounded="lg" color="default" class="drn_content__map">
-          <MapComponent v-if="chartData" :corridorData="airway" />
+          <MapComponent v-if="airway" :corridorData="airway" />
         </v-sheet>
       </div>
       </v-card-text>
@@ -166,15 +108,73 @@
     <!-- ページナビゲーション -->
     <PageNavigation :back="true">
       <ul class="e-buttonGroup">
+        <li>
+          <button v-if="role == 1" @click="addAirway" class="e-button" >航路追加</button>
+        </li>
+        <li>
+          <button v-if="role == 1" @click="addJunction" class="e-button" >航路点追加</button>
+        </li>
+        <li>
+          <button v-if="role == 1" @click="showConfirmModal" class="e-button">削除</button>
+        </li>
+      </ul>
+      <ul class="e-buttonGroup">
       </ul>
     </PageNavigation>
+    <!-- オーバーレイ -->
+    <div v-if="confirmDialogVisible" class="overlay"></div>
+    <!-- ダイアログ -->
+    <dialog class="c-dialog" v-if="confirmDialogVisible">
+      <h2 class="e-dialogTitle">本当にこの航路を削除しますか？</h2>
+      <table class="c-labeledList">
+        <tbody>
+          <tr class="c-labeledListRow">
+            <th class="e-listLabel">航路ID：</th>
+            <td class="e-listValue">{{ airwayId }}</td>
+           </tr>
+           <tr class="c-labeledListRow">
+             <th class="e-listLabel">航路名：</th>
+             <td class="e-listValue">{{ name }}</td>
+           </tr>
+        </tbody>
+      </table>
+      <ul class="e-buttonGroup">
+        <li>
+          <button class="e-button-noright" @click="closeConfirmModal">いいえ</button>
+        </li>
+        <li>
+          <button class="e-button-noright" @click="showFnishModal">はい</button>
+        </li>
+      </ul>
+    </dialog>
+    <!-- オーバーレイ -->
+    <div v-if="finishDialogVisible" class="overlay"></div>
+    <!-- ダイアログ -->
+    <dialog class="c-dialog" v-if="finishDialogVisible">
+      <h2 class="e-dialogTitle">{{ message }}</h2>
+      <table class="c-labeledList">
+        <tbody>
+          <tr class="c-labeledListRow">
+            <th class="e-listLabel">航路ID：</th>
+            <td class="e-listValue">{{ airwayId }}</td>
+           </tr>
+           <tr class="c-labeledListRow">
+             <th class="e-listLabel">航路名：</th>
+             <td class="e-listValue">{{ name }}</td>
+           </tr>
+        </tbody>
+      </table>
+      <ul class="e-buttonGroup">
+        <li>
+          <a class="e-button-noright" href="/airway">航路画定一覧へ戻る</a>
+        </li>
+      </ul>
+    </dialog>
    </div>
   </main>
 </template>
 
 <script>
-import axios from 'axios'; // axiosのインポート
-
 // 航路運営者向けサイドバー
 import GlobalNavigationRM from "~/components/navigation/globalNavigationRouteManager.vue";
 // 運航事業者向けサイドバー
@@ -209,78 +209,45 @@ export default {
       airwayDistance: '', 
       airwayJunctionRange: '', 
       sectionRange: '', 
-      airwayOperator: '', 
       applicationStatus: '', 
       cookie_role: null,
       role: null,
-      operatorData: null,
-      showStakeholdersPopup: false,
-      itemsPerPage: 10,
-      stakeholders: [],
-      stakeholdersSelected: [],
-      stakeholdersAllSelected: false,
-      stakeholdersNum: 0,
     };
   },
   computed: {
     corridorId() {
       return this.$route.query.id;
-    },   
-    stakeholdersText() {
-      const selectedData = this.stakeholders.filter(item =>
-        this.stakeholdersSelected.includes(item.operatorId)
-      );
-
-      /* もしselectedDataのリストの要素が1個以下ならば、その値（operatorName）をreturnする */
-      if (selectedData.length <= 1) {
-        return selectedData.map(item => item.operatorName).join('');
+    },
+    combinedSections() {
+      const points = Array.isArray(this.airwayJunctions) ? this.airwayJunctions : [];
+      const sections = Array.isArray(this.airwaySections) ? this.airwaySections : [];
+      const maxLength = Math.max(points.length, sections.length);
+      const combined = [];
+      for (let i = 0; i < maxLength; i++) {
+        if (i < points.length) {
+          combined.push({ id: i + 1, type: 'point', name: points[i].airwayJunctionName });
+        }
+        if (i < sections.length) {
+          combined.push({ id: i + 1, type: 'section', name: sections[i].airwaySectionName });
+        }
       }
-
-      /* もしselectedDataのリストの要素が2個以上ならば、先頭の値（operatorName）に",...(リストの要素数)"を付与した文字列をreturnする */
-      return `${selectedData[0].operatorName},...(${selectedData.length})`;
+      return combined;
     },
   },
   methods: {
-    togglePopup() {
-      this.showStakeholdersPopup = !this.showStakeholdersPopup;
+    sidebarIcon(number) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 33.818 33.818">
+        <circle cx="16.909" cy="16.909" r="14.909" fill="white" stroke="#2C69FF" stroke-width="4"/>
+        <text x="16.909" y="22" text-anchor="middle" font-size="16" font-family="MeiryoUI-Bold, Meiryo UI" font-weight="700" fill="#2C69FF">${number}</text>
+      </svg>`;
     },
-    toggleSelectAll() {
-      if (this.stakeholdersAllSelected) {
-        this.stakeholdersSelected = this.stakeholders.map(item => item.operatorId);
-      } else {
-        this.stakeholdersSelected = [];
-      }
+    addAirway() {
+      const router = useRouter()
+      router.push({ path: '/airway/addAirway', query: { id: this.corridorId } })
     },
-    async stakeholdersRegister() {
-      const selectedData = this.stakeholders.filter(item =>
-        this.stakeholdersSelected.includes(item.operatorId)
-      );
-
-      const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-      const airwayTenantLinkUrl = `${miscApiBaseUrl}/airwayTenantLink`;
-      const airwayTenantLinkHeaders = {
-        'accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
-      const airwayTenantLinkParams = {
-        "updateType": "0",
-        "airwayId": this.corridorId,
-        "relatedPartiesIdList": this.stakeholdersSelected,
-      };
-      try {
-        const airwayTenantLinkRes = await axios_put(airwayTenantLinkUrl, airwayTenantLinkParams, { headers: airwayTenantLinkHeaders });
-        console.log(airwayTenantLinkRes);
-        if (airwayTenantLinkRes.status != 200) {
-          console.error(`error: put airwayTenantLink info {status: ${airwayTenantLinkRes.status}}.`);
-          this.response = null;
-          return;
-        }
-      } catch (error) {
-        console.error(`Network request failed: ${error}`);
-      }
-
-      // ポップアップを非表示にする
-      this.showStakeholdersPopup = false;
+    addJunction() {
+      const router = useRouter()
+      router.push({ path: '/airway/addJunction', query: { id: this.corridorId } })
     },
   },
   async created() {
@@ -309,129 +276,171 @@ export default {
     }
   },
   async mounted() {
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const operatorUrl = `${miscApiBaseUrl}/operator`;
-    const operatorHeaders = {
-          headers: {
-                  'accept': 'application/json',
-          },
-    };
     try {
-      const operatorRes = await axios_get(operatorUrl, {}, operatorHeaders);
-      console.log(operatorRes);
-      if (operatorRes.status != 200) {
-        console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-        this.response = null;
+      const uaslRes = await $fetch('/api/airway/uasl', { 
+        method: 'GET',
+        query: { uaslId: [this.corridorId] }
+      });
+      if (uaslRes.status !== 200) {
+        console.error(`error: get uasl info {status: ${uaslRes.status}}.`);
+        this.chartData = null;
         return;
       }
-      this.operatorData = {};
-      this.operatorData = operatorRes.data;
-      const roleMap = {
-        "1": "航路運営事業者",
-        "2": "運航事業者",
-        "3": "関係者"
-      };
-      this.stakeholders = operatorRes.data.operatorList.map(item => ({
-        operatorId: item.operatorId, 
-        notificationType: item.notificationType,
-        operatorName: item.operatorName,
-        roleList: item.roleList.map(item => roleMap[item]).join(", "),
-        notificationTargetList: item.notificationTargetList,
-        linkAirwayList: item.linkAirwayList, 
-      }));
+      // ここでUASL→airwayに変換
+      console.log("uaslRes:", uaslRes);
+      this.airwayResData = utils.convertUaslToAirway(uaslRes.data);
+      console.log("airwayData:", this.airwayResData);
+      this.chartData = useAirwayConvertConnectionOrder(this.airwayResData);
+
     } catch (error) {
       console.error(`Network request failed: ${error}`);
     }
-
+    
     try {
-      const operatorAirwayIdRes = await axios_get(operatorUrl, {airwayId: this.corridorId}, operatorHeaders);
-      console.log(operatorAirwayIdRes);
-      if (operatorAirwayIdRes.status !== 200) {
-        console.error(`error: get operator info {status: ${operatorAirwayIdRes.status}}.`);
-        this.response = null;
+      const droneRes = await $fetch('/api/airway/aircraft', { 
+        method: 'GET'
+      });
+      console.log(droneRes);
+      if (droneRes.status !== 200) {
+        console.error(`error: get drone info {status: ${droneRes.status}}.`);
         return;
-      } else {
-        this.stakeholdersSelected = operatorAirwayIdRes.data.operatorList.map(item => item.operatorId);
       }
+      const aircraftInfo = droneRes.data.aircraft;
+      const airway = this.airwayResData.airway.airways[0];
+      this.airwayId = airway.airwayId;
+      this.name = airway.airwayName;
+      this.create_date = useDateString2(useAirwayGetAirwayApplicationDateFromAirwayId(this.chartData, this.corridorId));
+      this.purpose = airway.flightPurpose;
+      this.droneList = airway.droneList;
+      const droneIdSet = new Set(this.droneList);
+      this.type = aircraftInfo
+        .filter(a => droneIdSet.has(a["aircraftInfoId"]))
+        .map(a => a["name"])
+        .join(', ');
+      this.airwayJunctions = airway.airwayJunctions;
+      this.airwaySections = airway.airwaySections;
+      this.airway = airway; 
+      this.airwayDistance = useAirwayGetFullDistanceFromAirwayId(this.chartData, this.corridorId) + 'm';
+      this.airwayJunctionRange = useAirwayGetCorridorPointRangeFromAirwayIdFullWidth(this.chartData, this.corridorId);
+      this.sectionRange = useAirwayGetSectionRangeFromAirwayIdFullWidth(this.chartData, this.corridorId);
+      this.applicationStatus = "承認済";
     } catch (error) {
       console.error(`Network request failed: ${error}`);
     }
-
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const airwayUrl = `${airwayApiBaseUrl}/airway`;
-    const airwayRes = await axios_get(airwayUrl, {airwayId: this.corridorId}, {});
-    console.log(airwayRes);
-    if (airwayRes.status != 200) {
-      console.error(`error: get airway info {status: ${airwayRes.status}}.`);
-      this.chartData = {};
-      return;
-    }
-    this.chartData = useAirwayConvertConnectionOrder(airwayRes.data);
     
-    const droneUrl = `${airwayApiBaseUrl}/aircraft`;
-    const droneRes = await axios_get(droneUrl, {}, {});
-    console.log(droneRes);
-    if (droneRes.status != 200) {
-      console.error(`error: get drone info {status: ${droneRes.status}}.`);
-      return;
-    }
-    const aircraftInfo = droneRes.data.aircraft;
-    
-    const airway = airwayRes.data.airway.airways[0];
-    this.airwayId = airway.airwayId;
-    this.name = airway.airwayName;
-    this.create_date = useDateString2(useAirwayGetAirwayApplicationDateFromAirwayId(this.chartData, this.corridorId));
-    this.purpose = airway.flightPurpose;
-    this.droneList = airway.droneList;
-    for (let i =0; i < aircraftInfo.length; i++) {
-      if (aircraftInfo[i]["aircraft_info_id"] === this.droneList[0]) {
-        this.type = aircraftInfo[i]["name"];
-        break;
-      }
-    }
-    this.airwayJunctions = airway.airwayJunctions;
-    this.airwaySections = airway.airwaySections;
-    this.airway = airway; 
-    this.airwayDistance = useAirwayGetFullDistanceFromAirwayId(this.chartData, this.corridorId) + 'm';
-    this.airwayJunctionRange = useAirwayGetCorridorPointRangeFromAirwayIdFullWidth(this.chartData, this.corridorId);
-    this.sectionRange = useAirwayGetSectionRangeFromAirwayIdFullWidth(this.chartData, this.corridorId);
-    this.airwayOperator = getcompanyName(this.operatorData, this.chartData.airway.airwayAdministratorId),
-    this.applicationStatus = "承認済";
   },
   
-    
+  setup() {
+    const confirmDialogVisible = ref(false);
+    /* 確認モーダルの表示 */
+    const showConfirmModal = async () => {
+      confirmDialogVisible.value = true;
+    };
+    /* 確認モーダルの非表示 */
+    const closeConfirmModal = async () => {
+      confirmDialogVisible.value = false;
+    };
+    const finishDialogVisible = ref(false);
+    /* 終了モーダルの表示 */
+    const showFnishModal = async () => {
+      closeConfirmModal(); 
+      finishDialogVisible.value = true;
+      deleteAirway();
+    };
+    const message = ref("");
+    const deleteAirway = async () => {
+      /* 航路画定情報削除 */
+      const route = useRoute();
+      const uaslId = route.query.id;
+      try {
+        const response = await $fetch(`/api/airway/uasl/${uaslId}`, { 
+          method: 'DELETE',
+        });
+        console.log(response);
+        const status = response.status;
+        if (status === 204) {
+          message.value = "航路の削除に成功しました。";
+        } else {
+          message.value = "航路の削除に失敗しました。";
+        }
+      } catch (error) {
+        console.error(`Network request failed: ${error}`);
+      }
+    };
+
+    return {
+      confirmDialogVisible,
+      showConfirmModal,
+      closeConfirmModal,
+      finishDialogVisible,
+      showFnishModal,
+      deleteAirway,
+      message,
+    };
+  },
 };
 </script>
 
-<style>
-.e-button-add{
-  width: 98px;
-  height: 25px;
-  background: var(--txt_-333333) 0% 0% no-repeat padding-box;
-  border: 1px solid var(--line_-999999);
-  font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-14)/var(--unnamed-line-spacing-14) var(--unnamed-font-family-biz-udpgothic);
-  letter-spacing: var(--unnamed-character-spacing-0);
-  color: var(--unnamed-color-ffffff);
-  text-align: center;
-  margin-top: 15px;
-  margin-bottom: 10px;
+<style scoped>
+.detail-waypoint-list {
+  position: relative;
+  margin-left: 20px;
 }
 
-.popup {
+.detail-waypoint-list::before {
+  content: '';
   position: absolute;
-  top: 345px;
-  left: 300px;
-  width: 800px;
-  height: auto;
-  background-color: #fefefe;
-  border: 1px solid #888;
-  padding: 21px 55px;
-  z-index: 10000;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  left: 5px;
+  top: 12px;
+  bottom: 12px;
+  width: 14px;
+  background: #2C69FF;
 }
 
-.item-center {
+.detail-waypoint-list::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  bottom: 12px;
+  width: 8px;
+  background: #B1C8FF;
+}
+
+.detail-wl-wp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-wl-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+}
+
+.detail-wl-left {
+  width: 24px;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+}
+
+.detail-wl-icon-wrap {
+  flex-shrink: 0;
+  line-height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.detail-wl-wp-name {
+  font-size: 13px;
+}
+
+.detail-wl-sec-name {
+  font-size: 12px;
+  color: #bbb;
 }
 </style>
