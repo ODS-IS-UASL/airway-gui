@@ -1,5 +1,3 @@
-import { jwtDecode } from "jwt-decode";
-
 /* 内部関数 */
 export const role_check = async (page_role_list, virtual_role) => {
   let result = false;
@@ -27,17 +25,6 @@ export const role_check = async (page_role_list, virtual_role) => {
 export const roleVerification = async (page_role_list) => {
   let role_info = {};
   try {
-    //console.log(`roleVerification input role: ${page_role_list}`);
-    // CookieからToken('auth.token')を取得
-    // (key=value で保存されていて複数の場合、';'で区切られる)
-    const auth_token = document.cookie
-      .split(';')
-      .find((row) => row.startsWith('auth.token'))
-      .split('=')[1];
-    // Tokenをデコード
-    const decode = jwtDecode(auth_token);
-    // user role からユーザが選択したroleがpage参照に必要なrole一覧にあるか
-    // チェックする(cookieの元々userに付加されているrole一覧は使用しない)
     const virtual_role = localStorage.getItem('virtualRole');
     // ロールを検証
     const check_result = await role_check(page_role_list, virtual_role);
@@ -49,13 +36,14 @@ export const roleVerification = async (page_role_list) => {
       });
       return role_info;
     }
+    const roleList = localStorage.getItem('roleList');
+    const operatorId = localStorage.getItem('uasl:user:operatorId');
+    const operatorName = localStorage.getItem('uasl:user:operatorName');
     // role情報作成
     role_info = {
-      access_token: decode.accessToken,
-      refresh_token: decode.refreshToken,
-      operatorId: decode.operatorId,
-      operatorName: decode.operatorName,
-      roleList: decode.roleList,
+      operatorId: operatorId,
+      operatorName: operatorName,
+      roleList: roleList,
       virtual_role: virtual_role
     }
     return role_info;
@@ -73,29 +61,14 @@ export const roleVerification = async (page_role_list) => {
 export const roleVerification_noncheck = async () => {
   let role_info = {};
   try {
-    // CookieからToken('auth.token')を取得
-    // (key=value で保存されていて複数の場合、';'で区切られる)
-    const auth_token = document.cookie
-      .split(';')
-      .find((row) => row.startsWith('auth.token'))
-      .split('=')[1];
-    if (auth_token == null) {
-      showError({
-        statusCode: 403,
-        statusMessage:
-          'This role is not allowed to view the page.',
-      });
-      return role_info;
-    }
-    // Tokenをデコード
-    const decode = jwtDecode(auth_token);
+    const roleList = localStorage.getItem('roleList');
+    const operatorId = localStorage.getItem('uasl:user:operatorId');
+    const operatorName = localStorage.getItem('uasl:user:operatorName');
     // role情報作成
     role_info = {
-      access_token: decode.accessToken,
-      refresh_token: decode.refreshToken,
-      operatorId: decode.operatorId,
-      operatorName: decode.operatorName,
-      roleList: decode.roleList,
+      operatorId: operatorId,
+      operatorName: operatorName,
+      roleList: roleList,
     }
     return role_info;
   } catch(error) {
