@@ -40,18 +40,20 @@
       </dd>
       <div style="font-size: 0.8rem">
         <label>気象レーダー</label><br>
-        <input :id="wi_range_id" class="wi_range" type="range" list="wi_range_list" min="0" max="8" value="0" step="1" ref="wiRange" :disabled="isDisabled">
-        <datalist :id="wi_range_list_id" class="wi_range_list">
-          <option class="wi_range_option_top" value="0" label="現在"></option>
-          <option class="wi_range_option_next" value="1" label="1時間後"></option>
-          <option class="wi_range_option_next" value="2" label="2時間後"></option>
-          <option class="wi_range_option_next" value="3" label="3時間後"></option>
-          <option class="wi_range_option_next" value="4" label="4時間後"></option>
-          <option class="wi_range_option_next" value="5" label="5時間後"></option>
-          <option class="wi_range_option_next" value="6" label="6時間後"></option>
-          <option class="wi_range_option_next" value="7" label="7時間後"></option>
-          <option class="wi_range_option_next" value="8" label="8時間後"></option>
-        </datalist>
+        <div class="wi_range_container">
+          <input :id="wi_range_id" class="wi_range" type="range" min="0" max="8" value="0" step="1" ref="wiRange" :disabled="isDisabled">
+          <div class="wi_range_labels">
+            <span>現在</span>
+            <span>1時間後</span>
+            <span>2時間後</span>
+            <span>3時間後</span>
+            <span>4時間後</span>
+            <span>5時間後</span>
+            <span>6時間後</span>
+            <span>7時間後</span>
+            <span>8時間後</span>
+          </div>
+        </div>
       </div>
     </dl>
   </div>
@@ -112,7 +114,6 @@
   const chk_airfv_id = computed (() => `chk_airfv_${props.stepNo}`);
   const chk_lte_id = computed (() => `chk_lte_${props.stepNo}`);
   const wi_range_id = computed (() => `wi_range_${props.stepNo}`);
-  const wi_range_list_id = computed (() => `wi_range_list_${props.stepNo}`);
 
    // 地物ロード
   const loadGeoJson = async () => {
@@ -330,24 +331,19 @@
     const updateRainCloud = async (checked, map, time_index) => {
       try {
         console.log(`雨量のチェック状態：${checked}`);
-        const weatherApiBaseUrl = useRuntimeConfig().public.weatherApiBaseUrl;
         if(checked){
           isLoading.value = true;
           // 北西端、南東端の座標取得
           const bounds = map.getBounds();
           const northwest = bounds.getNorthWest();
           const southeast = bounds.getSouthEast();
-
-          const indexUrl = `${weatherApiBaseUrl}/index`;
-          const dataUrl = `${weatherApiBaseUrl}/data`;
-          const headers = {
-            authorizationtoken: 'neccrossindbizdev'
-          };
-
           const params = { elements: 'apcp' };
-          const indexResponse = await axios_get(indexUrl, params, headers)
+          const indexResponse = await $fetch('/api/weather/index', { 
+            method: 'GET',
+            query: params
+          });
           if (indexResponse.status !== 200) {
-            console.error(`axios_get error{status: ${indexResponse.status}}.`);
+            console.error(`$fetch error{status: ${indexResponse.status}}.`);
             isLoading.value = false;
             return;
           }
@@ -394,9 +390,12 @@
             grid: 250
           };
 
-          const responseApcp = await axios_get(dataUrl, dataParams, headers)
+          const responseApcp = await $fetch('/api/weather/data', { 
+            method: 'GET',
+            query: dataParams
+          });
           if (responseApcp.status !== 200) {
-            console.error(`axios_get error{status: ${responseApcp.status}}.`);
+            console.error(`$fetch error{status: ${responseApcp.status}}.`);
             isLoading.value = false;
             return;
           }
@@ -471,7 +470,6 @@
     const updateairinfo = async (checked, map, time_index) => {
       try {
         console.log(`風向・風量のチェック状態：${checked}`);
-        const weatherApiBaseUrl = useRuntimeConfig().public.weatherApiBaseUrl;
         if (checked) {
           isLoading.value = true;
           // 北西端、南東端の座標取得
@@ -480,17 +478,14 @@
           const southeast = bounds.getSouthEast();
  
           // 天候情報取得(ugrd(東西方向), vgrd(南北方向))
-          const indexUrl = `${weatherApiBaseUrl}/index`;
-          const dataUrl = `${weatherApiBaseUrl}/data`;
-          const headers = {
-            authorizationtoken: 'neccrossindbizdev'
-          };
-
           // index
           const params = { elements: 'ugrd,vgrd' };
-          const indexResponse = await axios_get(indexUrl, params, headers);
+          const indexResponse = await $fetch('/api/weather/index', { 
+            method: 'GET',
+            query: params
+          });
           if (indexResponse.status !== 200) {
-            console.error(`axios_get error{status: ${indexResponse.status}}.`);
+            console.error(`$fetch error{status: ${indexResponse.status}}.`);
             isLoading.value = false;
             return;
           }
@@ -532,9 +527,12 @@
             minutes: minute_now,
             grid: 250
           };
-          const dataResponse = await axios_get(dataUrl, dataParams, headers)
+          const dataResponse = await $fetch('/api/weather/data', { 
+            method: 'GET',
+            query: dataParams
+          });
           if (dataResponse.status !== 200) {
-            console.error(`axios_get error{status: ${dataResponse.status}}.`);
+            console.error(`$fetch error{status: ${dataResponse.status}}.`);
             isLoading.value = false;
             return;
           }
@@ -869,6 +867,12 @@
   height: 500px;
 }
 
+.wi_range_container {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
 .wi_range {
   appearance: slider-vertical;
   width: 20px;
@@ -877,21 +881,17 @@
   writing-mode: vertical-lr;
 }
 
-.wi_range_list {
-  display: inline-block;
-  width: 70px;
+.wi_range_labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   height: 230px;
-  margin-top: 10px;
+  margin-left: 10px;
 }
 
-.wi_range_option_top {
-  margin-left: 10px;
-  padding: 0.7px;
-}
-
-.wi_range_option_next {
-  margin-left: 10px;
-  padding: 0.7px;
+.wi_range_labels span {
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 </style>
