@@ -41,18 +41,21 @@ let apiParams = { maxLat: baseMaxLat, minLat: baseMinLat, maxLon: baseMaxLon, mi
  */
 const getDoronePortInfoList = async () => {
   try {
-    const apiResult = await useRestApiDronePortGetList(apiParams as DronePortGetListRequestQueryParams)
+    const apiResult = await $fetch('/api/drone/droneport/info/list', { 
+      method: 'GET',
+      query: apiParams
+    });
     if (utils.isNormalStatusResponse(apiResult.status)) {
-    // 取得成功時処理
-      const { data: dataList } = await apiResult.json()
+      // 取得成功時処理
+      const { data: dataList } = apiResult.data
       dronePortsInfo.value = dataList
     }
     else {
-    // 取得失敗時処理
-      const responseBody = await apiResult.json()
+      // 取得失敗時処理
+      const responseBody = apiResult.data
       commonDialogVisible.value = true
-      if (responseBody.errorDetail) {
-        commonDialogMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+      if (responseBody?.errorDetail) {
+        commonDialogMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：${apiResult.data.errorDetail})`
       }
       else {
         commonDialogMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：)`
