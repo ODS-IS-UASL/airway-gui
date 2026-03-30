@@ -8,19 +8,21 @@
   <main id="main" class="b-pageMain">
     <div class="b-pageContentHasSubMenu">
       <!-- メインコンテンツ -->
-      <div class="b-pageContentHasNavigation">
+      <div class="b-pageContentHasNavigation b-pageContentHasNavigation--fill">
         <!-- テーブル -->
         <RouteReservationItemList
-          v-if="airwayData  && reservationData "
-          :reservationData="reservationData"
+          :reservationData="reservationData || { result: [] }"
           :airwayData="airwayData"
+          :airwayDataLoading="airwayDataLoading"
+          :reservationLoading="reservationLoading"
+          :ownDataReady="ownDataReady"
         />
       </div>
       <!-- ページナビゲーション -->
       <PageNavigation :back="false">
         <ul v-if="role == 2" class="e-buttonGroup">
           <li>
-            <a href="airwayReservation/remind" class="e-button">新規予約</a>
+            <a href="airwayReservation/newReservation" class="e-button">新規予約</a>
           </li>
         </ul>
       </PageNavigation>
@@ -45,12 +47,17 @@ export default {
     GlobalNavigationSH,
     PageNavigation
   },
+  setup() {
+    const { airwayData, ownDataReady, airwayDataLoading, startLoading } = useAirwayReservationLoader();
+    return { airwayData, ownDataReady, airwayDataLoading, startLoading };
+  },
   data() {
     return {
-      airwayData: null, 
       reservationData: null,
+      reservationLoading: true,
       cookie_role: null,
       role: null,
+      parentOperatorId: null,
     };
   },
   async created() {
@@ -81,64 +88,74 @@ export default {
     }
   },
   async mounted() {
+    if (typeof window !== 'undefined') {
+      this.parentOperatorId = localStorage.getItem('uasl:user:parentOperatorId');
+    }
     // コンポーネントがマウントされたとき（DOM構築完了後）に呼ばれるフック
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const airwayUrl = `${airwayApiBaseUrl}/airway`;
-    const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-    if (airwayRes.status != 200) {
-      console.error(`error: get airway info {status: ${airwayRes.status}}.`);
-      this.airwayData = {};
-      return;
-    }
-    this.airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
+    var unwatch = this.$watch('role', async () => {
+      // role に値が設定された後に実施
+      if(this.role !== null) {
+        let lastPage = 1;
+        let currentPage = 1;
+        let tmpReservationData = null;
+        let reservationUrl = '';
+        switch (this.role) {
+          case 2:
+          case 3:
+            reservationUrl = `/api/reservation/operator/${this.parentOperatorId}/uaslReservations`;
+            break;
+          case 1:
+            reservationUrl = `/api/reservation/admin/uaslReservations`;
+            break;
+          default:
+            console.log("error: get airway reservation info (permision denied.)");
+            this.reservationData = {};
+            return;
+            break;
+        }
+        let reservationRes = await $fetch(reservationUrl, { 
+          method: 'GET',
+        });
+        if (reservationRes.status !== 200) {
+          console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
+          this.reservationData = {};
+          return;
+        }
 
-    let lastPage = 1;
-    let currentPage = 1;
-    let tmpReservationData = null;
-    let reservationUrl = '';
-    const reservationApiBaseUrl = useRuntimeConfig().public.reservationApiBaseUrl;
-    switch (this.role) {
-      case 2:
-        reservationUrl = `${reservationApiBaseUrl}/operator/${this.cookie_role.operatorId}/airwayReservations`;
-        break;
-      case 1:
-      case 3:
-        reservationUrl = `${reservationApiBaseUrl}/admin/airwayReservations`;
-        break;
-      default:
-        console.log("error: get airway reservation info (permision denied.)");
-        this.reservationData = {};
-        return;
-        break;
-    }
+        reservationRes.data = utils.convertUaslToAirwayReservation(reservationRes.data)
+        tmpReservationData = reservationRes.data;
+        currentPage = 1;
+        lastPage = reservationRes.data.lastPage;
+      
+        while (currentPage < lastPage) {
+          currentPage++;
+          let reservationRes = await $fetch(reservationUrl, { 
+            method: 'GET',
+            query: { page: currentPage }
+          });
+          console.log(reservationRes);
+          if (reservationRes.status !== 200) {
+            console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
+            this.reservationData = {};
+            return;
+          }
+          reservationRes.data = utils.convertUaslToAirwayReservation(reservationRes.data)
 
-    let reservationRes = await axios_get(reservationUrl, {}, {});
-    if (reservationRes.status != 200) {
-      console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
-      this.reservationData = {};
-      return;
-    }
-    tmpReservationData = reservationRes.data;
-    currentPage = 1;
-    lastPage = reservationRes.data.lastPage;
+          reservationRes.data.result.forEach((reservation) => {
+            tmpReservationData.result.push(reservation);
+          })
+        }
+        this.reservationData = tmpReservationData;
+        this.reservationLoading = false;
 
-    while (currentPage < lastPage) {
-      currentPage++;
-      let reservationRes = await axios_get(reservationUrl, {page: currentPage}, {});
-      console.log(reservationRes);
-      if (reservationRes.status != 200) {
-        console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
-        this.reservationData = {};
-        return;
+        // 予約一覧をここで即時表示（航路情報取得は段階的に非同期で実施）
+        // Stage2・Stage3 は useAirwayReservationLoader で管理
+        await this.startLoading(this.reservationData);
+
+        // 監視を解除
+        unwatch();
       }
-
-      reservationRes.data.result.forEach((reservation) => {
-        tmpReservationData.result.push(reservation);
-      })
-    }
-
-
-    this.reservationData = tmpReservationData;
+    });
   },
 };
 </script>
