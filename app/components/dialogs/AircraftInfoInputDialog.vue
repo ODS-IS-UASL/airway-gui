@@ -310,7 +310,11 @@ const registerAircraftReserveInfo = async () => {
   registration.value.reservationTimeTo = regReserveTimeTo
   registration.value.aircraftReservationId = utils.isNullUndefined(registration.value.aircraftReservationId) ? null : registration.value.aircraftReservationId
   // 機体予約情報登録API
-  const apiResult = await useRestApiReserveAircraftRegister(registration.value as AircraftReserveRequestParams)
+  registration.value.operatorId = localStorage.getItem('uasl:user:operatorId');
+  const apiResult = await $fetch(`/api/drone/aircraft/reserve`, { 
+    method: 'POST',
+    body: registration.value
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // APIの返り値が正常の場合
     // 予約完了ダイアログの表示
@@ -319,9 +323,9 @@ const registerAircraftReserveInfo = async () => {
   else {
     // APIの返り値が異常の場合
     // 予約失敗ダイアログの表示
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     registerFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体の予約に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -352,7 +356,11 @@ const updateAircraftReserveInfo = async () => {
   registration.value.reservationTimeFrom = regReserveTimeFrom
   registration.value.reservationTimeTo = regReserveTimeTo
   // 機体予約情報更新API
-  const apiResult = await useRestApiReserveAircraftUpdateByPk(props.reserveId, registration.value as AircraftUpdateReserveRequestParams)
+  registration.value.operatorId = localStorage.getItem('uasl:user:operatorId');
+  const apiResult = await $fetch(`/api/drone/aircraft/reserve`, { 
+    method: 'PUT',
+    body: registration.value
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // APIの返り値が正常の場合
     // 機体予約更新完了ダイアログの表示
@@ -361,9 +369,9 @@ const updateAircraftReserveInfo = async () => {
   else {
     // APIの返り値が異常の場合
     // 機体予約更新失敗ダイアログの表示
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     updateFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約情報の更新に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -380,7 +388,9 @@ const deleteAircraftReserveInfo = async () => {
   isLoading.value = true
   deleteConfirmDialogVisible.value = false
   // 機体予約情報削除API
-  const apiResult = await useRestApiReserveAircraftDeleteByPk(props.reserveId)
+  const apiResult = await $fetch(`/api/drone/aircraft/reserve/${props.reserveId}`, { 
+    method: 'DELETE',
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // APIの返り値が正常の場合
     // 機体予約削除完了ダイアログの表示
@@ -389,9 +399,9 @@ const deleteAircraftReserveInfo = async () => {
   else {
     // APIの返り値が異常の場合
     // 機体予約削除失敗ダイアログの表示
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     deleteFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約情報の削除に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
