@@ -72,25 +72,29 @@ export default {
     };
 
     onMounted(async () => {
-      const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-      const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-      const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+      const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+        method: 'GET',
+        query: { businessNumber: useRuntimeConfig().public.businessNumber }
+      });
       console.log(rangeRes);
       if (rangeRes.status != 200) {
         console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
         rangeData = null;
         return;
       }
-      rangeData = rangeRes.data;
-      const airwayUrl = `${airwayApiBaseUrl}/airway`;
-      const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-      console.log(airwayRes);
-      if (airwayRes.status != 200) {
-        console.error(`error: get airway info {status: ${airwayRes.status}}.`);
+      rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
+      const uaslRes = await $fetch('/api/airway/uasl', { 
+        method: 'GET',
+        query: { all: true }
+      });
+      console.log(uaslRes);
+      if (uaslRes.status !== 200) {
+        console.error(`error: get uasl info {status: ${uaslRes.status}}.`);
         airwayData = null;
         return;
       }
-      airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
+      const uaslResData = utils.convertUaslToAirway(uaslRes.data);
+      airwayData = useAirwayConvertConnectionOrder(uaslResData);
 
       const leafletModule = await import('leaflet');
       const L = leafletModule.default;
@@ -109,6 +113,9 @@ export default {
         }
       ).addTo(l_map.value);
 
+      // ページ遷移アニメーション中にマウントされた場合コンテナサイズが0になることがあるため再計算
+      l_map.value.invalidateSize();
+
       /* Zoomコントロール位置移動 */
       l_map.value.zoomControl.setPosition('topleft');
 
@@ -122,7 +129,7 @@ export default {
         }
       });
 
-      // 最大落下許容範囲を描画
+      // 最大落下範囲を描画
       areas.value.forEach(area => {
         L.polygon(area, {
           fill: true,
