@@ -109,17 +109,20 @@ onBeforeMount(async () => {
 
 // データ取得処理(ドローンポート情報詳細取得API)
 const loadingPortData = async (params: any) => {
-  const apiResult = await useRestApiDronePortGetByPk(params)
+  const apiResult = await $fetch(`/api/drone/droneport/info/detail/${params}`, { 
+    method: 'GET',
+    query: { isRequiredPriceInfo: false }
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return await apiResult.json() as DronePortGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json() as CommonResponse
+    const responseBody = apiResult.data
     infoListGetFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       dialogMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -130,17 +133,20 @@ const loadingPortData = async (params: any) => {
 
 // データ取得処理(ドローンポート予約情報一覧取得API)
 const loadingReservationListData = async (params: any) => {
-  const apiResult = await useRestApiReserveDronePortGetList(params)
+  const apiResult = await $fetch(`/api/drone/droneport/reserve/list`, { 
+    method: 'GET',
+    query: params
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return await apiResult.json() as DronePortReserveGetListResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     infoReservationListGetFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       dialogMessage.value = `離着陸場予約情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -152,17 +158,19 @@ const loadingReservationListData = async (params: any) => {
 
 // データ取得処理(ドローンポート予約情報詳細取得API)
 const loadingReservationDetailData = async (params: any) => {
-  const apiResult = await useRestApiReserveDronePortGetByPk(params)
+  const apiResult = await $fetch(`/api/drone/droneport/reserve/detail/${params}`, { 
+    method: 'GET',
+  });
 
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return await apiResult.json() as DronePortReserveGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     infoDetailGetFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       dialogMessage.value = `離着陸場予約情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -616,6 +624,7 @@ onMounted(async () => {
     const params = paramDronePortReservationId
     // 詳細取得APIで値を取得する
     dronePortReservationDetail.value = await loadingReservationDetailData(params)
+    console.log(dronePortReservationDetail.value)
     // カレンダーに渡すtargetDateを格納
     calendarTargetDate.value = convertDate(dronePortReservationDetail.value.reservationTimeFrom)
 
