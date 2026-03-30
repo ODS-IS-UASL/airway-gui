@@ -2,43 +2,60 @@
   import LoginHeader from "~/components/navigation/loginHeader.vue";
   import { ref } from "vue"
 
-  const cookie_role = ref(null);
+
   const role_type = ref(null);
   const role_123 = 7; // 0111 = role[1,2,3]
   const role_12 = 3; // 0011 = role[1,2]
   const role_13 = 5; // 0101 = role[1,3]
   const role_23 = 6; // 0110 = role[2,3]
 
-  const setRoleMask = async () => {
-    // role 取得
-    const ownpage_role = ["1","2","3"];
-    cookie_role.value = await roleVerification_noncheck();
-    if (Object.keys(cookie_role).length == 0) {
-      console.error(`selectRole get role error.`);
+  const setRoleMask = (roles) => {
+    /*
+        事業者
+          - "1": 航路運営者
+          - "2": 運航事業者
+          - "3": 関係者
+        ユーザ
+          - "10": 航路運営者_責任者
+          - "11": 航路運営者_担当者
+          - "20": 運航事業者_責任者
+          - "21": 運航事業者_担当者
+    */
+    const airwayManager = ["1", "10", "11"]; // 航路運営者
+    const airwayOperator = ["2", "20", "21"]; // 運航事業者
+    const stakeholder = ["3"]; // 関係者
+    const airwayManagerFlg = airwayManager.some(t => roles.includes(t));
+    const airwayOperatorFlg = airwayOperator.some(t => roles.includes(t))
+    const stakeholderFlg = stakeholder.some(t => roles.includes(t))
+
+    if (airwayManagerFlg &&
+        airwayOperatorFlg &&
+        stakeholderFlg) {
+      role_type.value = role_123;
+      localStorage.setItem('roleList', ["1", "2", "3"]);
+    } else if (airwayManagerFlg &&
+              airwayOperatorFlg) {
+      role_type.value = role_12;
+      localStorage.setItem('roleList', ["1", "2"]);
+    }  else if (airwayManagerFlg &&
+              stakeholderFlg) {
+      role_type.value = role_13;
+      localStorage.setItem('roleList', ["1", "3"]);
+    }  else if (airwayOperatorFlg &&
+              stakeholderFlg) {
+      role_type.value = role_23;
+      localStorage.setItem('roleList', ["2", "3"]);
     } else {
-      if (cookie_role.value.roleList != undefined) {
-        // role = 1:航路運営者 2:運航事業者 3:関係者
-        if (cookie_role.value.roleList.includes("1") &&
-            cookie_role.value.roleList.includes("2") &&
-            cookie_role.value.roleList.includes("3")) {
-          role_type.value = role_123;
-        } else if (cookie_role.value.roleList.includes("1") &&
-                  cookie_role.value.roleList.includes("2")) {
-          role_type.value = role_12;
-        }  else if (cookie_role.value.roleList.includes("1") &&
-                  cookie_role.value.roleList.includes("3")) {
-          role_type.value = role_13;
-        }  else if (cookie_role.value.roleList.includes("2") &&
-                  cookie_role.value.roleList.includes("3")) {
-          role_type.value = role_23;
-        } else {
-          localStorage.setItem('virtualRole', cookie_role.value.roleList[0]);
-          // user role を Localsession に設定後にリダイレクト
-          location.href="/airwayStatus";
-        }
+      localStorage.setItem('roleList', roles[0]);
+      let role;
+      if (airwayManagerFlg) {
+        role = "1";
+      } else if (airwayOperatorFlg) {
+        role = "2";
       } else {
-        console.error(`selectRole get role error(invalid role).`);
+        role = "3";
       }
+      setLocalStorageRole(role);
     }
     return;
   }
@@ -65,14 +82,32 @@
       console.error(`setLocalStorageRole error(${error})`);
     }
   }
-
-  if (process.client) {
+  
+  onMounted(async () => {
+    const config = useRuntimeConfig();
+    const ROLES_COOKIE = config.public.ouranos.cookie.roles;
+    const OPERATOR_ID_COOKIE = config.public.ouranos.cookie.operatorId;
+    const PARENT_OPERATOR_ID_COOKIE = config.public.ouranos.cookie.parentOperatorId;
+    const OPERATOR_NAME_COOKIE = config.public.ouranos.cookie.operatorName;
+    const roles = useCookie(ROLES_COOKIE);
+    const operatorId = useCookie(OPERATOR_ID_COOKIE);
+    const parentOperatorId = useCookie(PARENT_OPERATOR_ID_COOKIE);
+    const operatorName = useCookie(OPERATOR_NAME_COOKIE);
+    localStorage.setItem('uasl:user:parentOperatorId', parentOperatorId.value);
+    localStorage.setItem('uasl:user:operatorId', operatorId.value);
+    localStorage.setItem('uasl:user:operatorName', operatorName.value);
+    if (!roles.value || roles.value.length === 0) {
+      showError({
+        statusCode: 500,
+        message: 'No role.'
+      })
+    }
     try {
-      setRoleMask();
+      setRoleMask(roles.value);
     }  catch (error) {
       console.error(`setRoleMask error(${error})`);
     }
-  }
+  })
 </script>
 
 <template>
