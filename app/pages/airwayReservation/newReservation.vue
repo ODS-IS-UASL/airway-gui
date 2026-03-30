@@ -18,10 +18,13 @@ const step = ref(0)
 const stepTitle = ref('航路予約')
 const nextButton = ref('日時選択')
 const isDialogVisible = ref(false)
+const isPendingDialogVisible = ref(false)
 
 const aircraftId = ref('')
+const aircraftRemoteId = ref('')
 const airwayId = ref('')
-const purpose = ref('')
+const purpose = ref([])
+const pathSets = ref([])
 const type = ref('')
 const aircraftInfo = ref('')
 const aircraftInfoId = ref('')
@@ -35,22 +38,32 @@ const arrivalPortId = ref('')
 const departurePortDegrees = ref('')
 const arrivalPortDegrees = ref('')
 const datetime = ref('')
+const departureDatetime = ref('')
+const arrivalDatetime = ref('')
 const departure = ref('')
 const arrival = ref('')
 const postJsonData = ref('')
-const postDepaturePortJsonData = ref('')
-const postArrivalPortJsonData = ref('')
 const postConformityAssessmentJsonData = ref('');
 const postLinkageJsonData = ref('')
 const cookie_role = ref(null)
 const role = ref(null)
-const reservationId = ref('')
+const requestId = ref('')
 const reservationOk = ref(true)
 const datetimeSettingKey = ref(0)
 const confirmationKey = ref(0)
 const isEndIdFirst = ref(false)
+const isPortNeeded = ref(true)
+const isAircraftNeeded = ref(true)
+const isAircraftBringIn = ref(false)
+const departureAirwayId = ref('---')
+const arrivalAirwayId = ref('---')
+const departureAirwayName = ref('---')
+const arrivalAirwayName = ref('---')
+const totalAmount = ref(0)
+const sectionIds  = ref('')
 const rangeData = {
   aircraftId,
+  aircraftRemoteId,
   airwayId,
   purpose,
   type,
@@ -66,12 +79,20 @@ const rangeData = {
   departurePortDegrees,
   arrivalPortDegrees,
   datetime,
+  departureDatetime,
   departure,
+  arrivalDatetime,
   arrival,
   postJsonData,
-  postDepaturePortJsonData,
-  postArrivalPortJsonData,
   isEndIdFirst,
+  isPortNeeded,
+  isAircraftNeeded,
+  isAircraftBringIn,
+  departureAirwayId,
+  arrivalAirwayId,
+  departureAirwayName,
+  arrivalAirwayName,
+  sectionIds,
 };
 const router = useRouter();
 const isProcessing = ref(false);
@@ -104,8 +125,10 @@ if (process.client) {
 
 const handleAirwayDataUpdate = (airway) => {
   aircraftId.value = airway.aircraftId
+  aircraftRemoteId.value = airway.aircraftRemoteId ?? ''
   airwayId.value = airway.airwayId
   purpose.value = airway.purpose
+  pathSets.value = airway.pathSets ?? []
   type.value = airway.type
   aircraftInfo.value = airway.aircraftInfo
   aircraftInfoId.value = airway.aircraftInfoId
@@ -119,21 +142,29 @@ const handleAirwayDataUpdate = (airway) => {
   departurePortDegrees.value = airway.departurePortDegrees
   arrivalPortDegrees.value = airway.arrivalPortDegrees
   isEndIdFirst.value = airway.isEndIdFirst
+  isPortNeeded.value = airway.isPortNeeded ?? true
+  isAircraftNeeded.value = airway.isAircraftNeeded ?? true
+  isAircraftBringIn.value = airway.isAircraftBringIn ?? false
+  departureAirwayId.value = airway.departureAirwayId ?? airway.airwayId ?? '---'
+  arrivalAirwayId.value = airway.arrivalAirwayId ?? '---'
+  departureAirwayName.value = airway.departureAirwayName ?? airway.airwayName ?? '---'
+  arrivalAirwayName.value = airway.arrivalAirwayName ?? '---'
+  sectionIds.value = airway.sectionIds
 }
 
-const handleDatetimeUpdate = (departureDate, departureTime, arrivalTime) => {
+const handleDatetimeUpdate = (departureDate, departureTime, arrivalDate, arrivalTime) => {
   datetime.value = departureDate
+  departureDatetime.value = departureDate
   departure.value = departureTime
+  arrivalDatetime.value = arrivalDate
   arrival.value = arrivalTime
 }
 
-const handlePostJsonDataUpdate = (jsonData, DepaturePortJsonData, ArrivalPortJsonData) => {
+const handlePostJsonDataUpdate = (jsonData) => {
   postJsonData.value = jsonData;
-  postDepaturePortJsonData.value = DepaturePortJsonData;
-  postArrivalPortJsonData.value = ArrivalPortJsonData;
-
-  postConformityAssessmentJsonData.value = postJsonData.value.airwaySections.map(section => ({
-    "airwaySectionId": section.airwaySectionId,
+  
+  postConformityAssessmentJsonData.value = postJsonData.value.uaslSections.map(section => ({
+    "airwaySectionId": section.uaslSectionId,
     "startAt": section.startAt,
     "endAt": section.endAt,
     "aircraftInfo": aircraftInfo.value,
@@ -147,53 +178,137 @@ const handlePostJsonDataUpdate = (jsonData, DepaturePortJsonData, ArrivalPortJso
   };
 }
 
-const navigate = (next) => {
+const handleRequestIdUpdate = (pendingId, amount) => {
+  requestId.value = pendingId;
+  isPendingDialogVisible.value = !pendingId;
+  totalAmount.value = amount;
+  // ローディング終了（成功・失敗問わず常に実行）
+  isLoading.value = false;
+  console.log(`予約仮押さえローディング終了:${isLoading.value}`);
+  if(!isPendingDialogVisible.value) {
+    // 予約申請ボタン無効化解除（仮押さえ成功時のみ）
+    isProcessing.value = false;
+    console.log(`予約申請ボタン無効化解除:${isProcessing.value}`);
+  }
+}
+
+const airwayData = ref({})
+
+const navigate = async (next) => {   // ← async にする
   const stepNo = ref(next ? step.value + 1 : step.value - 1)
   const errorMessage = ref('')
-  // 条件チェック関数
-  const checkConditions = (step) => {
-    const isInvalid = (value) => value === '' || value === '---';
-    switch (step) {
+
+  const hasValidSections = () => {
+    if (!section.value || typeof section.value !== 'string') return false
+    const parts = section.value.split(',')
+    return parts.every(s => s && s !== '---')
+  }
+
+  const isInvalid = (value) => {
+    if (value == null) return true
+    if (typeof value === 'string') return value.trim() === '' || value === '---'
+    if (Array.isArray(value)) return value.length === 0
+    if (typeof value === 'object') return Object.keys(value).length === 0
+    return false
+  }
+
+  const checkConditions = async (stepToCheck) => {
+    switch (stepToCheck) {
       case 0:
         return true
-      case 1:
-        // ステップ1の条件チェック
-        if (isInvalid(aircraftId.value) ||
-            isInvalid(airwayId.value) ||
-            isInvalid(purpose.value) ||
-            isInvalid(type.value) ||
-            isInvalid(airwayName.value) ||
-            isInvalid(section.value) ||
-            isInvalid(departurePort.value) ||
-            isInvalid(arrivalPort.value) ||
-            isInvalid(departurePortId.value) ||
-            isInvalid(arrivalPortId.value) ||
-            isInvalid(junctionList.value) ||
-            isInvalid(aircraftInfo.value) ||
-            isInvalid(aircraftInfoId.value)) {
+
+      case 1: {
+        try {
+          const uaslRes = await $fetch('/api/airway/uasl', { 
+            method: 'GET',
+            query: { all: true }
+          });
+          if (uaslRes.status !== 200) {
+            console.error(`error: get uasl info {status: ${uaslRes.status}}.`)
+            airwayData.value = {}
+            return false
+          }
+
+          const uaslResData = utils.convertUaslToAirway(uaslRes.data)
+          airwayData.value = useAirwayConvertConnectionOrder(uaslResData)
+
+        } catch (e) {
+          console.error(e)
+          airwayData.value = {}
+          return false
+        }
+
+        let invalid = false
+        let invalidAirwaySelection  = false
+
+        // 常時必須
+        if (isInvalid(airwayId.value)) invalid = true
+        if (!hasValidSections()) invalid = true
+        // 全セットで飛行目的が選択済みか確認
+        if (pathSets.value.length === 0 || pathSets.value.some(s => !s?.purpose || s.purpose === '---')) invalid = true
+        
+        if (!invalid) {
+          // airwayData.value.airway.airways[].airwayId を全部取り出す
+          const availableAirwayIds = (airwayData.value?.airway?.airways ?? [])
+            .map(a => a?.airwayId)
+            .filter(Boolean)
+            
+            // airwayId.value(配列) のどれか1つでも availableAirwayIds に含まれていればOK
+            const selectedIds = Array.isArray(airwayId.value) ? airwayId.value : [airwayId.value]
+          const found = selectedIds.some(id => availableAirwayIds.includes(id))
+          
+          if (!found) invalidAirwaySelection = true
+        }
+        
+        // 離着陸場（必要時のみ）
+        if (isPortNeeded.value) {
+          if (isInvalid(departurePort.value) || isInvalid(arrivalPort.value)) invalid = true
+          if (isInvalid(departurePortId.value) || isInvalid(arrivalPortId.value)) invalid = true
+        }
+
+        // aircraftInfoId は持ち込みでも必須（＝ maker/model 選択必須）
+        if (isInvalid(aircraftInfoId.value) || isInvalid(aircraftInfo.value)) invalid = true;
+        
+        if (!isAircraftBringIn.value) {
+          // 登録機体：vehicleId必須
+          if (isInvalid(aircraftId.value)) invalid = true;
+        } else {
+          // 持ち込み：vehicleId不要、registrationId(=リモートID)も任意なのでチェックしない
+        }
+
+        if (invalid) {
           errorMessage.value = 'すべての項目を入力してください。'
           return false
         }
-        return true;
+        if (invalidAirwaySelection) {
+          errorMessage.value = '自社航路を含めてください。'
+          return false
+        }
+        return true
+      }
+
       case 2:
-        // ステップ2の条件チェック
         if (isInvalid(datetime.value) ||
+            isInvalid(departureDatetime.value) ||
             isInvalid(departure.value) ||
+            isInvalid(arrivalDatetime.value) ||
             isInvalid(arrival.value)) {
           errorMessage.value = '日時を選択してください。'
           return false
         }
-        return true; 
+        return true
+
       default:
-        return true;
+        return true
     }
   }
 
-  if (!checkConditions(stepNo.value)) {
-    // 条件が満たされていない場合はエラーメッセージを表示
+  // ← ここも await する
+  if (!await checkConditions(stepNo.value)) {
     alert(errorMessage.value)
-    return;
+    return
   }
+
 
   switch (stepNo.value) {
     case -1:
@@ -218,6 +333,7 @@ const navigate = (next) => {
       nextButton.value = '予約申請'
       stepTitle.value = '航路予約'
       if (next) confirmationKey.value = confirmationKey.value + 1
+      showConfirm()
       break
     case 3:
       showModal()
@@ -227,19 +343,21 @@ const navigate = (next) => {
   }
   step.value = stepNo.value
 }
+const showConfirm = async () => {
+  // 確認画面初期表示
+  try {
+    // 予約申請ボタン無効化
+    isProcessing.value = true;
+    console.log(`予約申請ボタン無効化:${isProcessing.value}`);
+    // ローディング開始
+    isLoading.value = true;
+    console.log(`予約仮押さえローディング開始:${isLoading.value}`);
+  } catch (error) {
+    console.error(error);
+    reservationOk.value = false;
+  } // end of 確認画面初期表示
+}
 const showModal = async () => {
-  // 初期化
-  const postCommonHeader = {headers: {'Content-Type': 'application/json'}};
-  const safetyApiBaseUrl = useRuntimeConfig().public.safetyApiBaseUrl;
-  const droneApiBaseUrl = useRuntimeConfig().public.droneApiBaseUrl;
-  const reservationApiBaseUrl = useRuntimeConfig().public.reservationApiBaseUrl;
-  let reservationFailed = false;
-  let depaturePortReserved = false;
-  let arrivalPortReserved = false;
-  let airwayPortReserved = false;
-  let portDepatureReservationId = '';
-  let portArrivalReservationId = '';
-  let airwayReservationId = '';
 
   // 予約正常系
   try {
@@ -249,147 +367,21 @@ const showModal = async () => {
     // ローディング開始
     isLoading.value = true;
     console.log(`予約申請ローディング開始:${isLoading.value}`);
-    // 1. 適合性評価
-    console.log("postConformityAssessment",postConformityAssessmentJsonData.value);
-    const conformityAssessmentUrl = `${safetyApiBaseUrl}/conformity-assessment`;
-    for (const data of postConformityAssessmentJsonData.value) {
-      console.log(data);
-      const conformityAssessmentRes = await axios_post(conformityAssessmentUrl, data, {});
-      if (conformityAssessmentRes.status !== 200) {
-        throw new Error(`1. failed to post conformityAssessment info, status: ${conformityAssessmentRes.status}`);
-      }
-      // 適合性評価の結果を確認
-      if (conformityAssessmentRes.data.evaluationResults == 'false') {
-        throw new Error(`1. conformityAssessment is false, status: ${conformityAssessmentRes.data.reasons}`);
-      }
-    }
-    console.log("1. conformity-assessment OK");
 
-    // 2. 離陸ポート予約
-    const portUrl = `${droneApiBaseUrl}/droneport/reserve`;
-    const depaturePortRes = await axios_post(portUrl, postDepaturePortJsonData.value, {});
-    if (depaturePortRes.status !== 200) {
-      throw new Error(`2. failed to post depaturePort info, status: ${depaturePortRes.status}`);
+    // 4. 航路予約（画定）
+    const reservationConfirmRes = await $fetch(`/api/reservation/uaslReservations/${requestId.value}/confirm`, { 
+      method: 'PUT',
+      body: {}
+    });
+    if (reservationConfirmRes.status !== 200) {
+      throw new Error(`4. failed to post airway confirmReservation info, status: ${reservationConfirmRes.status}`);
     }
-    portDepatureReservationId = depaturePortRes.data.dronePortReservationIds[0];
-    depaturePortReserved = true;
-    console.log("2. depature port reservation OK");
-
-    // 3. 着陸ポート予約
-    const arrivalPortRes = await axios_post(portUrl, postArrivalPortJsonData.value, {});
-    if (arrivalPortRes.status !== 200) {
-      throw new Error(`3. failed to post arrivalPort info, status: ${arrivalPortRes.status}`);
-    }
-    portArrivalReservationId = arrivalPortRes.data.dronePortReservationIds[0];
-    arrivalPortReserved = true;
-    console.log("3. arrival port reservation OK");
-
-    // 4. 航路予約
-    const reservationUrl = `${reservationApiBaseUrl}/airwayReservations`;
-    const reservationRes = await axios_post(reservationUrl, postJsonData.value, postCommonHeader);
-    if (reservationRes.status !== 200) {
-      throw new Error(`4. failed to post airway reservation info, status: ${reservationRes.status}`);
-    }
-    airwayReservationId = reservationRes.data.airwayReservationId;
-    reservationId.value = airwayReservationId;
-    airwayPortReserved = true;
-    console.log("4. airway reservation OK");
-
-    // 予約直後に紐づけAPIを送ると失敗するため、暫定で待機とリトライ処理を入れる。
-    const waitTimeLinkage = useRuntimeConfig().public.airwayReservationWaittimeBeforeLinkage; // 単位は秒
-    const sleepBeforeLinkage = (time) => new Promise((resolve) => setTimeout(resolve, time)); // 引数の単位はミリ秒
-    await sleepBeforeLinkage(waitTimeLinkage * 1000);
-    const retryCountLinkage = useRuntimeConfig().public.airwayReservationRetryCountBeforeLinkage; // リトライ回数
-
-    // 5. 航路予約IDとリモートIDの紐付け
-    postLinkageJsonData.value.airwayReservationId = airwayReservationId;
-    console.log("postLinkageJsonData", postLinkageJsonData.value);
-    const ignoreLinkageFailure_ = useRuntimeConfig().public.airwayReservationIgnoreLinkageFailure; // TODO: 紐づけAPIが正常動作するようになれば、左記の行は削除してOK
-    const ignoreLinkageFailure = (isNaN(ignoreLinkageFailure_))? false : Boolean(Number(ignoreLinkageFailure_)); // TODO: 紐づけAPIが正常動作するようになれば、左記の行は削除してOK
-    console.log("ignoreLinkageFailure:", ignoreLinkageFailure); // TODO: 紐づけAPIが正常動作するようになれば、左記の行は削除してOK
-    const linkageUrl = `${safetyApiBaseUrl}/linkage`;
-    const linkageRes = await axios_post(linkageUrl, postLinkageJsonData.value, {});
-    if (linkageRes.status !== 201) {
-      for (let i = retryCountLinkage; i > 0; i--) {
-        await sleepBeforeLinkage(waitTimeLinkage * 1000);
-        const linkageResRetry = await axios_post(linkageUrl, postLinkageJsonData.value, {});
-        if (linkageResRetry.status !== 201) {
-          if (i == 1) {
-            if (!ignoreLinkageFailure) // TODO: 紐づけAPIが正常動作するようになれば、左記の行は削除してOK
-            throw new Error(`5. failed to link airwayReservationId and remoteId, status: ${linkageRes.status}`);
-          }
-          continue;
-        } else {
-          console.log("5. link airwayReservationId and remoteId OK");
-          console.log(`retry count = ${i}`);
-          break;
-        }
-      }  
-    } else {
-      console.log("5. link airwayReservationId and remoteId OK");
-    }
-
-    // 6. ポート予約IDと航路予約IDを紐づけDBへ登録
-    const postInsertIdJsonData = {
-      "airwayReservationId": airwayReservationId,
-      "dronePortReservationIdFrom": portDepatureReservationId,
-      "dronePortReservationIdTo": portArrivalReservationId,
-      "aircraftRemoteId": aircraftId.value,
-      "aircraftInfo": aircraftInfo.value,
-    }
-    console.log("postInsertIdJsonData",postInsertIdJsonData);
-    const insertIdUrl = '/api/insertAirwayReservationIdWith';
-    const insertIdRes = await axios_post(insertIdUrl, postInsertIdJsonData, postCommonHeader);
-    if (insertIdRes.status !== 200) {
-      throw new Error(`6. failed to post insertId info, status: ${insertIdRes.status}`);
-    }
-    console.log("6. DB insert OK");
+    requestId.value = reservationConfirmRes.data.requestId;
+    console.log("4. airway confirmReservation OK");
   } catch (error) {
     console.error(error);
-    reservationFailed = true;
     reservationOk.value = false;
   } // end of 予約正常系
-
-  // 予約異常系
-  if (reservationFailed) {
-    // 予約に成功した各種予約をキャンセル
-    //   各キャンセル操作に失敗しても処理を継続する
-    //   共通関数 axios_XXX は例外を throw しないため、以下の実装において特に try-catch は行わない
-
-    // 離陸ポート予約をキャンセル
-    if (depaturePortReserved) {
-      const portDepatureUrl = `${droneApiBaseUrl}/droneport/reserve/${portDepatureReservationId}`;
-      const deleteDepaturePortRes = await axios_delete_body(portDepatureUrl, {operatorId: postDepaturePortJsonData.value.operatorId});
-      if (deleteDepaturePortRes.status === 200) {
-        console.log('[ROLLBACK] deleteDepaturePort OK');
-      } else {
-        console.error(`[ROLLBACK] failed to post deleteDepaturePort info, status: ${deleteDepaturePortRes.status}`);
-      }
-    }
-
-    // 着陸ポート予約をキャンセル
-    if (arrivalPortReserved) {
-      const portArrivalUrl = `${droneApiBaseUrl}/droneport/reserve/${portArrivalReservationId}`;
-      const deleteArrivalPortRes = await axios_delete_body(portArrivalUrl, {operatorId: postArrivalPortJsonData.value.operatorId});
-      if (deleteArrivalPortRes.status === 200) {
-        console.log('[ROLLBACK] deleteArrivalPort OK');
-      } else {
-        console.error(`[ROLLBACK] failed to post deleteArrivalPort info, status: ${deleteArrivalPortRes.status}`);
-      }
-    }
-
-    // 航路予約をキャンセル
-    //   新規航路予約が可能なロールは運航事業者のみの想定のため、キャンセル操作のみ実装しておく(撤回操作は実装していない)
-    if (airwayPortReserved) {
-      const urlCancel = `${reservationApiBaseUrl}/airwayReservations/${airwayReservationId}/cancel`;
-      let res = await axios_put(urlCancel, {}, postCommonHeader);
-      if (res.status === 200) {
-        console.log('[ROLLBACK] airwayReservation cancel OK');
-      } else {
-        console.error(`[ROLLBACK] failed to cancel airwayReservation, ${res.status}`);
-      }
-    }
-  } // end of 予約異常系
 
   // 予約申請ボタン無効化解除
   isProcessing.value = false;
@@ -466,7 +458,7 @@ const showModal = async () => {
               <v-stepper-window-item
               value="3"
               >
-                <confirmation :stepNo="3" :key="confirmationKey" :rangeData="rangeData" :roleData="cookie_role" @update:postJsonData="handlePostJsonDataUpdate"/>
+                <confirmation :stepNo="3" :key="confirmationKey" :rangeData="rangeData" :roleData="cookie_role" @update:postJsonData="handlePostJsonDataUpdate" @update:requestId="handleRequestIdUpdate"/>
               </v-stepper-window-item>
             </v-stepper-window>
           </v-stepper>
@@ -485,39 +477,47 @@ const showModal = async () => {
           </ul>
         </PageNavigation> 
         <!-- オーバーレイ -->
-        <div v-if="isDialogVisible" class="overlay"></div>
+        <div v-if="isDialogVisible || isPendingDialogVisible" class="overlay"></div>
         <!-- ダイアログ -->
-        <dialog class="c-dialog" v-if="isDialogVisible">
+        <dialog class="c-dialog" v-if="isDialogVisible || isPendingDialogVisible">
           <!-- 航路予約に成功した場合 -->
-          <h2 class="e-dialogTitle" v-if="reservationOk">航路予約完了</h2>
-          <p v-if="reservationOk">航路予約を完了しました</p>
-          <table class="drn_table drn_table--reserve_conf" v-if="reservationOk">
+          <h2 class="e-dialogTitle" v-if="reservationOk && isDialogVisible">航路予約完了</h2>
+          <p v-if="reservationOk && isDialogVisible">航路予約を完了しました</p>
+          <table class="drn_table drn_table--reserve_conf" v-if="reservationOk && isDialogVisible">
             <tbody>
               <tr class="drn_table__row">
                 <th class="drn_table__label">予約番号：</th>
-                <td class="drn_table__data">{{ reservationId }}</td>
+                <td class="drn_table__data">{{ requestId }}</td>
               </tr>
               <tr class="drn_table__row">
                 <th class="drn_table__label">航路：</th>
-                <td class="drn_table__data">{{ airwayName }}</td>
+                <td class="drn_table__data">{{ airwayName.join(',') }}</td>
               </tr>
               <tr class="drn_table__row">
                 <th class="drn_table__label">航路発着日時：</th>
                 <td class="drn_table__data">
-                  <time>{{ datetime }}</time>
-                  <time>{{ departure }}</time
-                  ><span class="e-waveLine">から</span>
+                  <time>{{ departureDatetime }}</time>&nbsp;
+                  <time>{{ departure }}</time>
+                  <span class="e-waveLine">から</span>
+                  <time>{{ arrivalDatetime }}</time>&nbsp;
                   <time>{{ arrival }}</time>
                 </td>
-               </tr>
+              </tr>
+              <tr class="drn_table__row">
+                <th class="drn_table__label">料金</th>
+                <td class="drn_table__data">{{ totalAmount }} 円</td>
+              </tr>
             </tbody>
           </table>
           <!-- 航路予約に失敗した場合 -->
-          <h2 class="e-dialogTitle" v-if="!reservationOk">航路予約失敗</h2>
-          <p v-if="!reservationOk">航路予約に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
+          <h2 class="e-dialogTitle" v-if="!reservationOk && isDialogVisible">航路予約失敗</h2>
+          <p v-if="!reservationOk && isDialogVisible">航路予約に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
+          <!-- 航路予約仮押さえに失敗した場合 -->
+          <h2 class="e-dialogTitle" v-if="isPendingDialogVisible">航路予約仮押さえ失敗</h2>
+          <p v-if="isPendingDialogVisible">航路予約の仮押さえに失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
           <!-- 航路予約の成否に関わらず共通 -->
           <ul class="e-buttonGroup">
-            <li v-if="reservationOk">
+            <li v-if="reservationOk && isDialogVisible">
               <a href="/airwayReservation/newReservation" class="e-button-noright">続けて航路予約</a>
             </li>
             <li>
@@ -548,4 +548,18 @@ const showModal = async () => {
   width: 80%;
 }
 
+/* Vuetify ステッパーの余白・影を除去して表示領域を最大化 */
+:deep(.v-stepper.v-sheet) {
+  box-shadow: none !important;
+}
+
+:deep(.v-stepper-window) {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+:deep(.v-stepper-window-item) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
 </style>
