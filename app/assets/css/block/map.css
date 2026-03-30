@@ -1,6 +1,6 @@
 @charset 'utf-8';
 
-/* 最大落下許容範囲切断面設定用マップ */
+/* 最大落下範囲切断面設定用マップ */
 .b-routeCutPlaneSetting {
   position: relative;
 
@@ -19,7 +19,7 @@
     overflow-y: auto;
   }
 
-  /* 最大落下今日範囲切断マップ */
+  /* 最大落下範囲切断マップ */
   .c-cutFallToleranceRangeMap {
     position: absolute;
     top: 0;
