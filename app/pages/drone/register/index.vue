@@ -4,6 +4,12 @@ import ReferenceImagePreview from '~/components/register/ReferenceImagePreview.v
 import MapDialog from '~/components/dialogs/MapDialog.vue'
 import CommonDialog from '~/components/dialogs/CommonDialog.vue'
 import PageNavigation from '~/components/navigation/pageNavigation.vue'
+// 料金表管理改修  Start
+import PriceInfoManager from '~/components/price/PriceInfoManager.vue'
+import { type PriceInfo } from '~/components/price/PriceInfoManager.vue'
+import { nanoid } from 'nanoid'
+import PayloadInfoDialog, { type PayloadInfo } from '~/components/dialogs/PayloadInfoDialog.vue'
+// 料金表管理改修  End
 
 definePageMeta({
   layout: 'system-global-navigation',
@@ -49,6 +55,46 @@ const deleteConfirmDialogVisible = ref(false) // 削除確認ダイアログ
 const deleteSuccessDialogVisible = ref(false) // 削除成功ダイアログ
 const deleteFailedDialogVisible = ref(false) // 削除失敗ダイアログ
 
+// 料金表管理改修  Start
+// 機体候補リスト用
+const aircraftList = ref<any[]>([])
+type Aircraft = {
+  maker: string
+  modelNumber: string
+  name: string
+  type: string
+  ip: string
+  length: number
+  weight: number
+  maximumTakeoffWeight: number
+  maximumFlightTime: number
+  deviationRange: number
+  fallingModel: string
+}
+
+// 料金表情報用
+const priceInfos = ref<PriceInfo[]>([])
+
+// 添付ファイル情報用
+interface FileInfo {
+  _key: string
+  fileId: string | null
+  fileLogicalName: string
+  filePhysicalName: string
+  fileData: string
+  processingType?: number
+}
+const fileInfos = ref<FileInfo[]>([])
+const fileInput = ref<HTMLInputElement | null>(null)
+
+// ペイロード情報用
+const payloadInfos = ref<PayloadInfo[]>([])
+const payloadDialogVisible = ref(false)
+const payloadIsViewMode = ref<true | false>(false)
+const payloadDialogInitialData = ref<PayloadInfo | null>(null)
+const payloadDialogIndex = ref<number | null>(null)
+// 料金表管理改修  End
+
 /** フォームデータ */
 const formData = ref<Record<string, any>>({
   aircraftId: null, // 機体ID
@@ -67,13 +113,20 @@ const formData = ref<Record<string, any>>({
   ownerType: null, // 機体所有種別
   ownerId: null, // 所有者ID
   imageData: '', // base64Text
+  // 料金表管理改修  Start
+  modelNumber: '', // 型式番号
+  publicFlag: false, // 公開可否フラグ
+  priceInfos: [], // 料金表情報
+  fileInfos: [], // 添付ファイル情報
+  payloadInfos: [], // ペイロード情報
+  // 料金表管理改修  End
 })
 
 const formSetting = {
   // ラベル名・必須・最大長・セレクトリスト内容・チェックボックス内容設定用
   aircraftId: { label: '機体ID' },
   aircraftName: { label: '機体名', maxLength: '24', required: true },
-  manufacturer: { label: '製造メーカー', maxLength: '24', required: false },
+  manufacturer: { label: '製造メーカー', maxLength: '200', required: false },
   manufacturingNumber: { label: '製造番号', maxLength: '20', required: false },
   aircraftType: { label: '機体の種類', options: [initialOption, ...getCodeByType('aircraftType')], required: false },
   maxTakeoffWeight: { label: '最大離陸重量(kg)', maxLength: '8', required: false },
@@ -81,12 +134,261 @@ const formSetting = {
   maxFlightSpeed: { label: '最大速度(km/h)', maxLength: '4', required: false },
   maxFlightTime: { label: '最大飛行時間(分)', maxLength: '4', required: false },
   dipsRegistrationCode: { label: 'DIPS登録記号', maxLength: '12', required: false },
-  lat: { label: '機体位置(緯度)', maxLength: '12', required: false },
-  lon: { label: '機体位置(経度)', maxLength: '12', required: false },
+  // 機体の緯度·経度を必須項目とする調整 start
+  lat: { label: '機体位置(緯度)', maxLength: '12', required: true },
+  lon: { label: '機体位置(経度)', maxLength: '12', required: true },
+  // 機体の緯度·経度を必須項目とする調整 end
   ownerType: { label: '機体所有種別', options: [initialOption, ...getCodeByType('ownerType')], required: true },
   ownerId: { label: '所有者ID', maxLength: '36', required: false },
+  // 料金表管理改修  Start
+  modelNumber: { label: '型式番号', maxLength: '200', required: false },
+  publicFlag: { label: '公開可', maxLength: '', required: false },
+  // 料金表管理改修  End
   certification: { label: '機体認証の有無', maxLength: '', required: false },
 }
+
+// 料金表管理改修  Start
+/**
+ * 料金表情報を formData に反映する
+ */
+const onPriceInfosChange = (submitList: any[]) => {
+  formData.value.priceInfos = submitList
+  changeFormData()
+}
+/**
+ * 削除ボタン押下時の処理（添付ファイル行削除）
+ * @param index 行番号
+ */
+const removeFileRow = (index: number) => {
+  if (fileInfos.value[index].fileId) {
+    fileInfos.value[index].processingType = 3;
+    fileInfos.value[index].fileLogicalName = '';
+    fileInfos.value[index].filePhysicalName = '';
+    fileInfos.value[index].fileData = '';
+  } else {
+    fileInfos.value.splice(index, 1)
+  }
+  changeFormData()
+}
+/**
+ * 添付ファイル情報・ペイロード情報を formData に反映する
+ */
+const formDataEdit = () => {
+  
+  // 添付ファイル情報を formData に設定
+  formData.value.fileInfos = fileInfos.value
+  .filter(item => item.processingType !== 2)
+  .map(({ _key, ...rest }: FileInfo) => rest)
+
+  // ペイロード情報を formData に設定
+  formData.value.payloadInfos = payloadInfos.value.map(item => {
+    if (item.processingType === 2 && item.fileData === '') {
+      const { fileData, ...rest } = item
+      return rest
+    }
+    return item
+  })
+}
+/**
+ * 添付ファイルを追加ボタン押下時の処理
+ * @param index 行番号
+ */
+const openFileDialog = () => {
+  if (fileInput.value) {
+    // v-file-inputクリック時のイベントを起こす
+    fileInput.value.click()
+  }
+}
+/**
+ * ファイル選択時の処理
+ * @param event ファイル選択イベント
+ * @param index 行番号
+ */
+const onFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+
+  const file = input.files[0]
+
+  // 1GB を超える場合は処理しない
+  if (file.size > constants.file.maxSize) {
+    if (input) input.value = ''
+    return
+  }
+
+  // 拡張子を除いた論理名
+  const fileLogicalName = file.name.replace(/\.[^/.]+$/, '')
+  // 拡張子含む物理名
+  const filePhysicalName = file.name
+  if (fileLogicalName.length > constants.file.maxLength.fileLogicalName) {
+    // 補足資料名称(ファイル論理名) maxLength 超過
+    if (input) input.value = ''
+    return
+  }
+
+  if (filePhysicalName.length > constants.file.maxLength.filePhysicalName) {
+    // ファイル物理名 maxLength 超過
+    if (input) input.value = ''
+    return
+  }
+
+  const newFileInfo = {
+    _key: nanoid(),
+    fileId: null,
+    fileLogicalName: fileLogicalName,
+    filePhysicalName: filePhysicalName,
+    fileData: '',
+    processingType: 1,
+  }
+
+  const reader = new FileReader()
+  reader.onload = () => {
+    newFileInfo.fileData = reader.result as string
+  }
+  reader.readAsDataURL(file)
+
+  fileInfos.value.push(newFileInfo)
+  input.value = ''
+  changeFormData()
+}
+
+/**
+ * ペイロード情報追加ダイアログを開く
+ */
+const openPayloadDialogForAdd = () => {
+  payloadDialogInitialData.value = null
+  payloadDialogVisible.value = true
+  payloadDialogIndex.value = null
+}
+
+/**
+ * ペイロード情報更新ダイアログを開く
+ * @param index ペイロード情報のインデックス
+ */
+const openPayloadDialogForUpdate = (index: number) => {
+  payloadDialogInitialData.value = { ...payloadInfos.value[index] }
+  payloadDialogVisible.value = true
+  payloadDialogIndex.value = index
+}
+
+/**
+ * ペイロード情報登録・更新処理
+ * @param payload ペイロード情報
+ */
+const onPayloadRegister = (payload: PayloadInfo) => {
+  if (payloadDialogIndex.value === null) {
+    // 新規登録
+    payloadInfos.value.push(payload)
+  } else {
+    // 更新
+    payloadInfos.value[payloadDialogIndex.value] = payload
+  }
+  changeFormData()
+}
+/**
+ * 削除ボタン押下時の処理（ペイロード行削除）
+ * @param index 行番号
+ */
+const removePayloadRow = (index: number) => {
+  if (payloadInfos.value[index].payloadId) {
+    payloadInfos.value[index].processingType = 3;
+    payloadInfos.value[index].payloadName = '';
+    payloadInfos.value[index].payloadDetailText = '';
+    payloadInfos.value[index].imageData = '';
+    payloadInfos.value[index].filePhysicalName = '';
+    payloadInfos.value[index].fileData = '';
+  } else {
+    payloadInfos.value.splice(index, 1)
+  }
+  changeFormData()
+}
+/**
+ * 機体情報候補リストの取得
+ * - メーカー／型式番号のプルダウン生成元データ
+ */
+const loadAircraftOptions = async () => {
+  // 機体情報候補リストの取得APIを呼び出し
+  const apiResult = await $fetch('/api/airway/aircraft', { 
+    method: 'GET'
+  });
+  if (utils.isNormalStatusResponse(apiResult.status)) {
+    const { aircraft } = apiResult.data
+
+    aircraftList.value = aircraft
+  } else {
+    const responseBody = apiResult.data
+    getFailedDialogVisible.value = true
+    if (responseBody?.errorDetail) {
+      errorDetail.value = `機体情報候補リストの取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+    }
+    else {
+      errorDetail.value = `機体情報候補リストの取得に失敗しました。(エラー詳細：)`
+    }
+  }
+}
+/**
+ * 製造メーカー選択用オプション
+ */
+const manufacturerOptions = computed(() => {
+  return [
+    // 初期の空選択肢
+    initialOption,
+    // 機体情報候補リストから製造メーカー名を抽出し、重複を除外
+    ...Array.from(
+      new Set(aircraftList.value.map((item: { maker: string }) => item.maker))
+    ).map((maker: string) => ({
+      value: maker,
+      title: maker,
+    })),
+  ]
+})
+/**
+ * 型式番号選択用オプション
+ */
+const modelNumberOptions = computed(() => {
+  return [
+    // 初期の空選択肢
+    initialOption,
+
+    // 製造メーカーに応じて型式番号を抽出
+    ...Array.from(
+      new Set(
+        aircraftList.value
+          // 選択されたメーカーでフィルタ
+          .filter((item: { maker: string }) => {
+            if (!formData.value.manufacturer) return true
+            return item.maker === formData.value.manufacturer
+          })
+          // 型式番号を取得
+          .map((item: { modelNumber: string }) => item.modelNumber)
+      )
+    ).map((modelNumber: string) => ({
+      value: modelNumber,
+      title: modelNumber,
+    })),
+  ]
+})
+
+/**
+ * 製造メーカー変更イベント
+ *  型式番号の選択肢を絞り込むため、製造メーカー変更時に型式番号の値をクリアする
+ */
+const changeManufacturer = () => {
+  changeFormData()
+  const currentModel = formData.value.modelNumber
+  if (!currentModel) return
+
+  const isValid = aircraftList.value.some(
+    (item: { maker: string; modelNumber: string }) =>
+      item.maker === formData.value.manufacturer &&
+      item.modelNumber === currentModel
+  )
+
+  if (!isValid) {
+    formData.value.modelNumber = ''
+  }
+}
+// 料金表管理改修  End
 
 onBeforeMount(async () => {
   myRole.value = await getRole(ownpageRole) // ロール
@@ -94,6 +396,9 @@ onBeforeMount(async () => {
 
 onMounted(async () => {
   await getAircraftInfo()
+  // 料金表管理改修  Start
+  await loadAircraftOptions()
+  // 料金表管理改修  End
 })
 
 const loadOn = () => {
@@ -128,9 +433,17 @@ const getAircraftInfo = async () => {
     await loadOff()
     return
   }
-  const apiResult = await useRestApiAircraftGetByPk(aircraftId)
+  // 料金表管理改修  Start
+  const apiResult = await $fetch(`/api/drone/aircraft/info/detail/${aircraftId}`, { 
+    method: 'GET',
+    query: {
+      isRequiredPriceInfo: true,
+      isRequiredPayloadInfo: true,
+    }
+  });
+  // 料金表管理改修  End
   if (utils.isNormalStatusResponse(apiResult.status)) {
-    const aircraftInfo = await apiResult.json()
+    const aircraftInfo = apiResult.data
     // 更新画面の場合、取得した機体情報をバインド
     formData.value.aircraftId = aircraftInfo.aircraftId
     formData.value.aircraftName = aircraftInfo.aircraftName
@@ -148,11 +461,41 @@ const getAircraftInfo = async () => {
     formData.value.ownerId = aircraftInfo.ownerId
     formData.value.certification = aircraftInfo.certification
     formData.value.imageData = aircraftInfo.imageData
+    // 料金表管理改修  Start
+    formData.value.publicFlag = aircraftInfo.publicFlag
+    formData.value.modelNumber = aircraftInfo.modelNumber
+    // 料金表情報
+    priceInfos.value = (aircraftInfo.priceInfos ?? [])
+    .slice()
+    .sort((a: PriceInfo, b: PriceInfo) => Number(a.priority ?? 0) - Number(b.priority ?? 0))
+    .map((item: PriceInfo) => ({
+      _key: nanoid(),
+      priceId: item.priceId,
+      price: item.price,
+      pricePerUnit: item.pricePerUnit,
+      priceType: item.priceType,
+      priority: item.priority,
+      effectiveStartTime: utils.isNullUndefined(item.effectiveStartTime) ? '' : utils.toFormatJSTtime(item.effectiveStartTime, constants.format.datetimePicker, 'local'),
+      effectiveEndTime: utils.isNullUndefined(item.effectiveEndTime) ? '' : utils.toFormatJSTtime(item.effectiveEndTime, constants.format.datetimePicker, 'local'),
+      processingType: 2,
+    }))
+    // 添付ファイル情報
+    fileInfos.value = (aircraftInfo.fileInfos ?? []).map((item: FileInfo) => ({
+      ...item,
+      _key: nanoid(),
+      processingType: 2,
+    }))
+    // ペイロード情報
+    payloadInfos.value = (aircraftInfo.payloadInfos ?? []).map((item: PayloadInfo) => ({
+      ...item,
+      processingType: 2,
+    }))
+    // 料金表管理改修  End
   }
   else {
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     getFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -170,14 +513,17 @@ const registerAircraftInfo = async () => {
   await loadOn()
   registerConfirmDialogVisible.value = false
   formData.value.ownerId = utils.isBlank(formData.value.ownerId) ? null : formData.value.ownerId
-  const apiResult = await useRestApiAircraftRegister(formData.value as AircraftRegisterRequestParams)
+  const apiResult = await $fetch('/api/drone/aircraft/info', { 
+    method: 'POST',
+    body: formData.value
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     registerSuccessDialogVisible.value = true
   }
   else {
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     registerFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体情報の登録に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -195,14 +541,17 @@ const updateAircraftInfo = async () => {
   await loadOn()
   updateConfirmDialogVisible.value = false
   formData.value.ownerId = utils.isBlank(formData.value.ownerId) ? null : formData.value.ownerId
-  const apiResult = await useRestApiAircraftUpdateByPk(aircraftId, formData.value as AircraftUpdateByPkRequestParams)
+  const apiResult = await $fetch('/api/drone/aircraft/info', { 
+    method: 'PUT',
+    body: formData.value
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     updateSuccessDialogVisible.value = true
   }
   else {
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     updateFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体情報の更新に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -219,14 +568,16 @@ const deleteAircraftInfo = async () => {
   // spinerOn
   await loadOn()
   deleteConfirmDialogVisible.value = false
-  const apiResult = await useRestApiAircraftDeleteByPk(aircraftId)
+  const apiResult = await $fetch(`/api/drone/aircraft/info/${aircraftId}`, { 
+    method: 'DELETE',
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     deleteSuccessDialogVisible.value = true
   }
   else {
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     deleteFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体情報の削除に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
@@ -252,6 +603,16 @@ const onRegisterButtonClick = async () => {
   if (isNaN(formData.value.maxFlightTime)) {
     formData.value.maxFlightTime = null
   }
+  // 料金表管理改修  Start
+  if (utils.isNullUndefined(formData.value.manufacturer)) {
+    formData.value.manufacturer = ''
+  }
+  if (utils.isNullUndefined(formData.value.modelNumber)) {
+    formData.value.modelNumber = ''
+  }
+  // 添付ファイル情報・ペイロード情報を formData に反映する
+  formDataEdit()
+  // 料金表管理改修  End
   // バリデーションチェック
   const valid = await validate()
   if (valid) {
@@ -280,6 +641,16 @@ const onUpdateButtonClick = async () => {
   if (isNaN(formData.value.maxFlightTime)) {
     formData.value.maxFlightTime = null
   }
+  // 料金表管理改修  Start
+  if (utils.isNullUndefined(formData.value.manufacturer)) {
+    formData.value.manufacturer = ''
+  }
+  if (utils.isNullUndefined(formData.value.modelNumber)) {
+    formData.value.modelNumber = ''
+  }
+  // 添付ファイル情報・ペイロード情報を formData に反映する
+  formDataEdit()
+  // 料金表管理改修  End
   // バリデーションチェック
   const valid = await validate()
   if (valid) {
@@ -574,7 +945,7 @@ const toFixedMaxFlightTime = () => {
                       </v-col>
                     </v-row>
                   </v-col>
-                  <v-col>
+                  <v-col cols="9">
                     <v-row>
                       <v-col cols="4">
                         <!-- 機体名 -->
@@ -604,15 +975,17 @@ const toFixedMaxFlightTime = () => {
                           >*</b>
                           <b>{{ formSetting.manufacturer.label }}</b>
                         </label>
-                        <v-text-field
+                        <!-- 料金表管理改修  Start -->
+                        <v-select
                           v-model="formData.manufacturer"
-                          :maxlength="formSetting.manufacturer.maxLength"
-                          outlined
-                          dense
+                          :items="manufacturerOptions"
+                          item-value="value"
+                          item-title="title"
                           :rules="formSetting.manufacturer.required ? [requiredValidation] : []"
                           variant="outlined"
-                          @change="changeFormData"
+                          @update:model-value="changeManufacturer"
                         />
+                        <!-- 料金表管理改修  End -->
                       </v-col>
                       <v-col cols="4">
                         <!-- 製造番号 -->
@@ -774,6 +1147,7 @@ const toFixedMaxFlightTime = () => {
                           >*</b>
                           <b>{{ formSetting.lat.label }}</b>
                         </label>
+                        <!--  機体の緯度·経度を必須項目とする調整 start -->
                         <v-text-field
                           v-model.number="formData.lat"
                           class="coordinate"
@@ -781,11 +1155,12 @@ const toFixedMaxFlightTime = () => {
                           outlined
                           dense
                           :hide-spin-buttons="true"
-                          :rules="formSetting.lat.required ? [latRangeValidation] : [latRangeValidation]"
+                          :rules="formSetting.lat.required ? [requiredValidation, latRangeValidation] : [latRangeValidation]"
                           variant="outlined"
                           @input="toFixedInputLat()"
                           @change="toFixedLat()"
                         >
+                        <!--  機体の緯度·経度を必須項目とする調整 end -->
                           <template #prepend>
                             <v-icon
                               size="x-large"
@@ -804,6 +1179,7 @@ const toFixedMaxFlightTime = () => {
                           >*</b>
                           <b>{{ formSetting.lon.label }}</b>
                         </label>
+                        <!--  機体の緯度·経度を必須項目とする調整 start -->
                         <v-text-field
                           v-model.number="formData.lon"
                           class="coordinate"
@@ -811,11 +1187,12 @@ const toFixedMaxFlightTime = () => {
                           outlined
                           dense
                           :hide-spin-buttons="true"
-                          :rules="formSetting.lon.required ? [lonRangeValidation] : [lonRangeValidation]"
+                          :rules="formSetting.lon.required ? [requiredValidation, lonRangeValidation] : [lonRangeValidation]"
                           variant="outlined"
                           @input="toFixedInputLon()"
                           @change="toFixedLon()"
                         />
+                        <!--  機体の緯度·経度を必須項目とする調整 end -->
                       </v-col>
                       <v-col cols="4">
                         <!-- 機体所有種別 -->
@@ -857,9 +1234,34 @@ const toFixedMaxFlightTime = () => {
                           @change="changeFormData"
                         />
                       </v-col>
+
+                      <!-- 料金表管理改修  Start -->
+                      <v-col cols="4">
+                        <!-- 型式番号 -->
+                        <label class="form-label">
+                          <b
+                            v-if="formSetting.modelNumber.required"
+                            style="color: red"
+                          >*</b>
+                          <b>{{ formSetting.modelNumber.label }}</b>
+                        </label>
+                        
+                        <v-select
+                          v-model="formData.modelNumber"
+                          :items="modelNumberOptions"
+                          item-value="value"
+                          item-title="title"
+                          :rules="formSetting.modelNumber.required ? [requiredValidation] : []"
+                          variant="outlined"
+                          @update:model-value="changeFormData"
+                        />
+                      </v-col>
+                      <!-- 料金表管理改修  End -->
+
                       <v-col
                         cols="4"
                         style="align-content: center;"
+                        class="d-flex"
                       >
                         <!-- 機体認証の有無 -->
                         <label class="form-label">
@@ -877,8 +1279,120 @@ const toFixedMaxFlightTime = () => {
                             @change="changeFormData"
                           />
                         </span>
+                        <!-- 公開可否フラグ -->
+                        <label class="form-label">
+                          <b
+                            v-if="formSetting.publicFlag.required"
+                            style="color: red"
+                          >*</b>
+                        </label>
+                        <span style="display: flex;">
+                          <v-checkbox
+                            v-model="formData.publicFlag"
+                            hide-details="auto"
+                            :label="formSetting.publicFlag.label"
+                            class="mx-2"
+                            @change="changeFormData"
+                          />
+                        </span>
                       </v-col>
                     </v-row>
+                    
+                    <!-- 料金表管理改修  Start -->
+                    <PriceInfoManager
+                      v-model="priceInfos"
+                      :resource-type="1"
+                      @change="onPriceInfosChange"
+                    />
+
+                    <!-- 補足資料 -->
+                    <v-row no-gutters align="center" class="price-block" :class="priceInfos.filter(x => x.processingType !== 3).length === 0 ? 'mt-4' : ''">
+                      <v-col class="d-flex align-center">
+                        <div>
+                          <div class="price-title pa-2 ml-4 font-weight-black v-label">
+                            <b>補足資料</b>
+                          </div>
+                          <span class="ml-4">飛行許可·申請時に必要な資料を追加してください</span>
+                        </div>
+
+                        <v-spacer />
+
+                        <v-btn
+                          variant="outlined"
+                          class="e-button-add-row mr-2"
+                          rounded="pill"
+                          @click="openFileDialog"
+                          :disabled="fileInfos.filter(x => x.processingType !== 3).length >= 100"
+                        >
+                          添付ファイルを追加
+                        </v-btn>
+                      </v-col>
+                    </v-row>
+                    <v-row no-gutters class="mt-2 ml-4" v-if="fileInfos.some(x => x.processingType !== 3)">
+
+                      <v-chip-group
+                        multiple
+                        column
+                        v-for="(item, index) in fileInfos"
+                        :key="item._key"
+                      >
+                        <v-chip
+                          v-if="item.processingType !== 3"
+                          closable
+                          variant="flat"
+                          rounded="0"
+                          close-icon="mdi-close"
+                          @click:close="removeFileRow(index)"
+                          @click="useRestApiFileDownloadFile(formData.aircraftId, item.fileId)"
+                          class="ma-1 file-payload-chip"
+                        >
+                          <div :class="item.fileId ? 'link-chip' : ''">{{ item.fileLogicalName }}</div>
+                        </v-chip>
+                      </v-chip-group>
+                    </v-row>
+                    <v-file-input
+                      ref="fileInput"
+                      class="d-none"
+                      :accept="constants.file.allowedTypes.join(',')"
+                      @change="onFileChange"
+                    />
+
+                    <!-- ペイロード情報追加 -->
+                    <v-row no-gutters align="center" class="price-block mt-4">
+                      <v-col>
+                        <div class="price-title pa-2 ml-4 font-weight-black v-label">
+                          <b>ペイロード情報追加</b>
+                        </div>
+                      </v-col>
+
+                      <v-col class="text-right pr-2">
+                        <v-btn
+                          variant="outlined"
+                          class="e-button-add-row"
+                          rounded="pill"
+                          @click="openPayloadDialogForAdd"
+                          :disabled="payloadInfos.filter(x => x.processingType !== 3).length >= 20"
+                        >
+                          ペイロード情報を追加
+                        </v-btn>
+                      </v-col>
+                    </v-row>
+                    <v-row no-gutters class="mt-2 ml-4">
+                      <v-chip
+                        v-for="(item, index) in payloadInfos"
+                        :key="index"
+                        class="ma-1 file-payload-chip"
+                        closable
+                        variant="flat"
+                        rounded="0"
+                        close-icon="mdi-close"
+                        @click="openPayloadDialogForUpdate(index)"
+                        @click:close="removePayloadRow(index)"
+                      >
+                        <div class="link-chip">{{ item.payloadName }}</div>
+                      </v-chip>
+                    </v-row>
+                    <!-- 料金表管理改修  End -->
                   </v-col>
                 </v-row>
               </v-form>
@@ -976,6 +1490,15 @@ const toFixedMaxFlightTime = () => {
             :lon="formData.lon"
             @update-coordinates="updateCoordinates"
           />
+          <!-- 料金表管理改修  Start -->
+          <!-- ペイロード情報ダイアログ -->
+          <PayloadInfoDialog
+            v-model:dialog-visible="payloadDialogVisible"
+            :is-view-mode="payloadIsViewMode"
+            :initial-payload="payloadDialogInitialData"
+            @register="onPayloadRegister"
+          />
+          <!-- 料金表管理改修  End -->
           <!-- 登録確認ダイアログ -->
           <CommonDialog
             v-model:dialog-visible="registerConfirmDialogVisible"
@@ -1191,4 +1714,23 @@ const toFixedMaxFlightTime = () => {
 input[type='number'] {
   text-align: right;
 }
+
+/* 料金表管理改修  Start */
+.file-payload-chip{
+  background: #d6eeeb;
+  color: #4281c5;
+  cursor: default;
+  height: auto !important;
+  min-height: 30px !important;
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  max-width: 100%;
+}
+.link-chip{
+  text-decoration: underline;
+  cursor: pointer;
+}
+/* 料金表管理改修  End */
 </style>
