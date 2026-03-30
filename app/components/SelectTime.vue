@@ -3,7 +3,7 @@
   <div class="b-dateTimeScheduleForm">
    <div class="c-formItem-selectTime">
       <label for="sectionField" class="e-fieldLabel-section">航路</label>
-      <div class="sectionField">{{ this.airwayName }}</div>  
+      <div class="sectionField">{{ this.airwayName.join(", ") }}</div>  
     </div>
     <div class="c-formItem-selectTime">
       <label for="depatureSectionField" class="e-fieldLabel-section">離陸</label>
@@ -49,16 +49,25 @@
         </dd>
       </div>
       <div class="c-formItem-selectTime">
-      <label for="depatureSectionField" class="e-fieldLabel-aircraftId">機体リモートID</label>
-      <div class="sectionField">{{ this.aircraftId }}</div>  
-    </div> 
+        <label for="depatureSectionField" class="e-fieldLabel-aircraftId">DIPS登録記号</label>
+        <div class="sectionField">{{ this.aircraftRemoteId }}</div>
+      </div> 
       <div class="c-formItem-searchVacancies">
         <dt class="e-fieldLabel-time">この日程条件の</dt>
         <dd>
           <button class="select-time-button" @click="handleButtonClick">航路空き状況</button>
 	      </dd>
       </div>
-      <div :style="{ visibility: showText ? 'visible' : 'hidden' }" class="search-result">{{ showTextMessage }}</div>
+      <div :style="{ visibility: showText ? 'visible' : 'hidden' }" class="search-result">
+        <div>{{ showTextMessage }}</div>
+
+        <!-- 予約可能のときだけ、同じ白枠内に料金を表示 -->
+        <div v-if="flag === 1" style="margin-top: 6px;">
+          <span v-if="priceLoading">料金 取得中...</span>
+          <span v-else-if="price !== null">料金 {{ formatYen(price) }}円</span>
+          <span v-else-if="priceError">{{ priceError }}</span>
+        </div>
+      </div>
     </dl>
   </div>
 </template>
@@ -71,30 +80,65 @@ export default {
       type: String,
       required: true
     },
-    aircraftId: {
-      type: String,
-      required: true
-    },
-    start: {
-      type: String,
-      required: true
-    },
-    end: {
-      type: String,
-      required: true
-    },
-    departurePort: {
-      type: String,
-      required: true
-    },
-    arrivalPort: {
-      type: String,
-      required: true
-    },
-    flag: {
-      type: Number,
-      default: 0
-    }
+  aircraftId: {
+    type: String,
+    required: false,
+    default: '' 
+  },
+  aircraftRemoteId: {
+    type: String,
+    required: false,
+    default: ''
+  },
+  aircraftInfo: {
+    type: Object,
+    required: false,
+    default: ''
+  },
+  start: {
+    type: String,
+    required: true
+  },
+  end: {
+    type: String,
+    required: true
+  },
+  departurePort: {
+    type: String,
+    required: true
+  },
+  arrivalPort: {
+    type: String,
+    required: true
+  },
+  flag: {
+    type: Number,
+    default: 0
+  },
+  airwayData: {
+    type: Object,
+    default: true
+  },
+  airwayId: {
+    type: String,
+    default: true
+  },
+  section: {
+    type: String,
+    default: true
+  },
+  sectionIdList: {
+    type: Array,
+    default: () => []
+  },
+  departurePortId: {
+    type: String,
+    default: true
+  },
+  arrivalPortId: {
+    type: String,
+    default: true
+  }
   },
   data() {
     return {
@@ -104,6 +148,10 @@ export default {
       arrivalTime: '',
       showText: false,
       showTextMessage: '日時を入力してください',
+      postJsonData: "",
+      price: null,
+      priceLoading: false,
+      priceError: '',
     };
   },
   methods: {
@@ -116,23 +164,29 @@ export default {
       });
     },
     
-    emitAddNewEvent() {
+    async handleButtonClick() {
       this.$emit('add-new-event', {
         departureDate: this.departureDate,
         departureTime: this.departureTime,
         arrivalDate: this.arrivalDate,
         arrivalTime: this.arrivalTime,
       });
-    },
-    
-    handleButtonClick() {
-      this.$emit('add-new-event', {
-        departureDate: this.departureDate,
-        departureTime: this.departureTime,
-        arrivalDate: this.arrivalDate,
-        arrivalTime: this.arrivalTime,
-      });      
       this.showText = true;
+      this.updateShowTextMessage(this.flag);
+      // 料金取得
+      this.price = null;
+      this.priceError = '';
+      this.priceLoading = true;
+
+      try {
+        const amount = await this.fetchPrice();
+        this.price = (amount ?? null);
+      } catch (e) {
+        console.error(e);
+        this.priceError = '料金の取得に失敗しました';
+      } finally {
+        this.priceLoading = false;
+      }
     },
     updateShowTextMessage(flag) {
       console.log(flag);
@@ -144,11 +198,111 @@ export default {
         this.showTextMessage = 'この日程は予約が重複しています';
       }
     },
+
+    async fetchPrice() {
+      this.postJsonData = await this.generateJson();
+      let estimateRes = await $fetch('/api/reservation/uaslReservations/estimate', { 
+        method: 'POST',
+        body: this.postJsonData
+      });
+      console.log(estimateRes);
+      if (estimateRes.status !== 200) {
+        console.error(`error: get airway reservation info {status: ${estimateRes.status}}.`);
+        this.reservationData = {};
+        return;
+      }
+      return estimateRes.data.totalAmount
+    },
+
+    async generateJson() {
+      let airwaySections = []
+      const sectionIdList = this.sectionRange();
+
+      const startAt = this.startAt();
+      const endAt = this.endAt();
+
+      for (let i = 0; i < sectionIdList.length; i += 1) {
+        let foundAirwayId = null;
+        for (const airway of this.airwayData.airway.airways) {
+          for (const airwaySection of airway.airwaySections) {
+            if (sectionIdList[i] === airwaySection.airwaySectionId) {
+              foundAirwayId = airway.airwayId;
+              break;
+            }
+          }
+          if (foundAirwayId) break;
+        }
+        if (!foundAirwayId) continue;
+        
+        airwaySections.push({
+          uaslSectionId: sectionIdList[i],
+          uaslId: foundAirwayId,
+          startAt: this.startAt(),
+          endAt: this.endAt()
+        })
+      }
+
+      const payload = {
+        uaslSections: airwaySections,
+      };
+
+      if (this.aircraftId) {
+        payload.vehicles = [
+          {
+            vehicleId: this.aircraftId,
+            aircraftInfo: this.aircraftInfo,
+            startAt,
+            endAt
+          },
+        ];
+      }
+
+      if (this.departurePortId && this.arrivalPortId) {
+        payload.ports = [
+          {
+            portId: this.departurePortId,
+            usageType: 1,
+            startAt,
+            endAt
+          },
+          {
+            portId: this.arrivalPortId, 
+            usageType: 2,
+            startAt,
+            endAt
+          },
+        ];
+      }
+      return payload;
+    },
+
+    sectionRange() {
+      if (Array.isArray(this.sectionIdList) && this.sectionIdList.length) return this.sectionIdList;
+      return [];
+    },
+
+    startAt() {
+      // 要修正。日本で使われるケースのみ想定。
+      return useDateStringLocaltoUTC(this.departureDate + 'T' + this.departureTime + ':00+09:00');
+    },
+    // 終了日時をISOの形で返す
+    endAt() {
+      // 要修正。日本で使われるケースのみ想定。
+      return useDateStringLocaltoUTC(this.arrivalDate + 'T' + this.arrivalTime + ':00+09:00');
+    },
+
+    formatYen(amount) {
+      if (amount === null || amount === undefined || amount === '') return '';
+      return new Intl.NumberFormat('ja-JP').format(Number(amount));
+    },
   },
   watch: {
     flag(newVal) {
       this.updateShowTextMessage(newVal);
     }
+  },
+
+  async mounted() {
   }
 };
 </script>
@@ -319,7 +473,7 @@ h2.e-pageTitle{
 
 .search-result {
   width: 250px;
-  height: 50px;
+  min-height: 50px;
   border: 1px solid var(--line_-999999);
   font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-bold) var(--unnamed-font-size-14)/var(--unnamed-line-spacing-14) var(--unnamed-font-family-biz-udpgothic);
   letter-spacing: var(--unnamed-character-spacing-0);
