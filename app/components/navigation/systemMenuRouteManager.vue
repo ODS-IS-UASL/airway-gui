@@ -2,8 +2,6 @@
 import oidcDips from "../oidcDips.vue";
 import SetNotice from '~/components/notice/setNoticeData.vue'
 
-const { signOut } = useAuth();
-
 const showOverlay = ref(false);
 function airwayClickEvent() {
   showOverlay.value = !showOverlay.value;
@@ -18,6 +16,19 @@ const showLoginOverlay = ref(false);
 function loginClickEvent() {
   showLoginOverlay.value = !showLoginOverlay.value;
 }
+async function logout() {
+  console.log('logout() start.');
+  localStorage.removeItem("uasl:user:parentOperatorId");
+  localStorage.removeItem("uasl:user:operatorId");
+  localStorage.removeItem("uasl:user:operatorName");
+  localStorage.removeItem("roleList");
+  localStorage.removeItem("virtualRole");
+  await $fetch('/api/auth/logout', { 
+    method: 'GET',
+  });
+  navigateTo('/login', { replace: true })
+}
+
 //通知バッジ
 const notificationBadge = ref('');
 let timerId = null
@@ -54,6 +65,8 @@ onMounted(() => {
     notificationBadge.value = localStorage.getItem('notificationBadge');
   }, 10 * 1000) // 10秒
   }
+  // 全ユーザ属性をキャッシュ（運航事業者名変換用）
+  initUserAttrCache();
 });
 
 </script>
@@ -135,7 +148,7 @@ onMounted(() => {
       </div>
     </span>
   </button>
-  <button type="button" v-on:click="loginClickEvent" class="v-btn v-btn--icon v-theme--light v-btn--density-default v-btn--rounded v-btn--size-default v-btn--variant-text drn_menu__btn drn_menu__btn--user" aria-haspopup="menu" aria-expanded="false" aria-owns="menu5sub">
+  <button type="button" v-on:click="loginClickEvent" :title="cookie_role ? (cookie_role.operatorName || '') : ''" class="v-btn v-btn--icon v-theme--light v-btn--density-default v-btn--rounded v-btn--size-default v-btn--variant-text drn_menu__btn drn_menu__btn--user" aria-haspopup="menu" aria-expanded="false" aria-owns="menu5sub">
     <span class="v-btn__overlay"></span>
     <span class="v-btn__underlay"></span>
     <span class="v-btn__content" data-no-activator="">
@@ -166,18 +179,7 @@ onMounted(() => {
         <div class="v-list-item__spacer"></div>
       </div>
       <div class="v-list-item__content" data-no-activator="">
-        <div class="v-list-item-title drn_menu_sub__btn_text"> 最大落下許容範囲 </div>
-      </div>
-    </a>
-    <a href="/stakeholders" class="v-list-item v-list-item--link v-list-item--slim v-theme--light v-list-item--density-compact v-list-item--one-line rounded-0 v-list-item--variant-text drn_menu_sub__btn" tabindex="-2" aria-selected="false">
-      <span class="v-list-item__overlay"></span>
-      <span class="v-list-item__underlay"></span>
-      <div class="v-list-item__prepend">
-        <img src="/assets/css/img/menu/user-solid.svg" width="20" height="20">
-        <div class="v-list-item__spacer"></div>
-      </div>
-      <div class="v-list-item__content" data-no-activator="">
-        <div class="v-list-item-title drn_menu_sub__btn_text"> 関係者登録 </div>
+        <div class="v-list-item-title drn_menu_sub__btn_text"> 最大落下範囲 </div>
       </div>
     </a>
   </div>
@@ -221,7 +223,7 @@ onMounted(() => {
 </div>
 <div v-if="showLoginOverlay" class="v-overlay__content" style="position: fixed; bottom: 0px; left: 65px; --v-overlay-anchor-origin: right bottom; transform-origin: left bottom; max-width: 902.4px; max-height: 706.4px;">
   <div class="v-list v-list--slim v-theme--light v-list--density-compact v-list--one-line drn_menu_sub" tabindex="0" role="listbox">
-    <button @click="() => signOut({ callbackUrl: '/'})" class="v-list-item v-list-item--link v-list-item--slim v-theme--light v-list-item--density-compact v-list-item--one-line rounded-0 v-list-item--variant-text drn_menu_sub__btn" tabindex="-2" aria-selected="false">
+    <button @click="logout()" class="v-list-item v-list-item--link v-list-item--slim v-theme--light v-list-item--density-compact v-list-item--one-line rounded-0 v-list-item--variant-text drn_menu_sub__btn" tabindex="-2" aria-selected="false">
       <span class="v-list-item__overlay"></span>
       <span class="v-list-item__underlay"></span>
       <div class="v-list-item__content" data-no-activator="">
