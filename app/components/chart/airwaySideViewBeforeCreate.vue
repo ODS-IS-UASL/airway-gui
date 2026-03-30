@@ -1,18 +1,25 @@
 ﻿<template>
   <div class="chart-container">
-    <div class="chart">
-      <Line ref="chartRef" :data="graphData" :options="chartOptions" style="width: 100%; height: 100%;"/>
+    <div class="chart-body">
+      <div class="chart">
+        <div v-if="isLoading" class="chart-loading">データを取得中です…</div>
+        <Line v-else ref="chartRef" :data="graphData" :options="chartOptions" style="width: 100%; height: 100%;"/>
+      </div>
+      <div class="chart-legend">
+        <span class="chart-legend-dash"></span>
+        <span class="chart-legend-text">高度150m（高度は目安です）</span>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
 import { Line } from 'vue-chartjs';
-import { Chart as ChartJS, LineElement, CategoryScale, LinearScale, Title, Tooltip, Legend, PointElement } from 'chart.js';
+import { Chart as ChartJS, LineElement, CategoryScale, LinearScale, Title, Tooltip, Legend, PointElement, Filler } from 'chart.js';
 import { ref, onMounted, nextTick } from 'vue';
 import * as turf from "@turf/turf";
 
-ChartJS.register(LineElement, CategoryScale, LinearScale, Title, Tooltip, Legend, PointElement);
+ChartJS.register(LineElement, CategoryScale, LinearScale, Title, Tooltip, Legend, PointElement, Filler);
 
 const parallelogramPlugin = {
   id: 'parallelogramPlugin',
@@ -35,13 +42,13 @@ const parallelogramPlugin = {
 
       ctx.save();
       ctx.beginPath();
-      ctx.strokeStyle = "#000000";
+      ctx.strokeStyle = "#2c69ff";
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.lineTo(x3, y3);
       ctx.lineTo(x4, y4);
       ctx.closePath();
-      ctx.fillStyle = '#ADCDEC';  // 塗りつぶしの色
+      ctx.fillStyle = '#b1c8ff';  // 塗りつぶしの色
       ctx.fill();
       ctx.stroke();
       ctx.restore();
@@ -61,15 +68,37 @@ const parallelogramPlugin = {
 
       ctx.save();
       ctx.beginPath();
-      ctx.strokeStyle = "#F78FA7";
+      ctx.strokeStyle = "#2c69ff";
       ctx.moveTo(x0, y0);
       ctx.lineTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.lineTo(x3, y3);
       ctx.closePath();
-      ctx.fillStyle = '#F78FA7';  // 塗りつぶしの色
+      ctx.fillStyle = '#b1c8ff';  // 塗りつぶしの色
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
+    });
+
+    // 航路点アイコン（非アクティブ：白背景・青框・青テキスト）
+    const R = 12;
+    const junctionList = (chart.data && chart.data.junctionList) || (chart.options && chart.options.junctionList) || [];
+    junctionList.forEach((junc) => {
+      const cx = xScale.getPixelForValue(junc.x);
+      const cy = yScale.getPixelForValue(junc.y);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = 'white';
+      ctx.fill();
+      ctx.strokeStyle = '#2C69FF';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.fillStyle = '#2C69FF';
+      ctx.font = 'bold 11px "Meiryo UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(junc.label), cx, cy);
       ctx.restore();
     });
   }
@@ -101,6 +130,7 @@ export default {
 
     let chartOptions = ref({
       responsive: true,
+      layout: { padding: { top: 30, left: 16, right: 16 } },
       plugins: {
         tooltip: { enabled: true },
         legend: { display: false },
@@ -108,14 +138,11 @@ export default {
       scales: {
         x: {
           type: 'linear',
-          position: 'bottom',
-          ticks: {
-            stepSize: 100,
-          },
+          display: false,
         },
         y: {
           type: 'linear',
-          position: 'left',
+          display: false,
           min: 0,
         },
       },
@@ -130,6 +157,7 @@ export default {
     });
 
     let chartRef = ref(null);
+    const isLoading = ref(true);
 
     // 平行四辺形のプラグインを登録
     ChartJS.register(parallelogramPlugin);
@@ -166,6 +194,7 @@ export default {
         })
 
         const plotData = ref([]);
+        const junctionList = [];
         let maxXValue = 0;
         let maxYValue = 0;
 
@@ -194,6 +223,8 @@ export default {
           const point0 = turf.point([x0, y0]);
           const point1 = turf.point([x1, y1]);
           const afterDistance = turf.distance(point0, point1) * 1000;
+          if (i === 0) junctionList.push({ x: distance, y: (highBefore + lowBefore) / 2, label: 1 });
+          junctionList.push({ x: distance + afterDistance, y: (highAfter + lowAfter) / 2, label: i + 2 });
           if (i == all_coordinates.length - 2) {
             let center_line_elem = [x1, y1];
             let left_line_elem = [all_coordinates[i + 1][0][0], all_coordinates[i + 1][0][1]];
@@ -290,6 +321,7 @@ export default {
         // 航路の真下に存在する地物を確認
         let preDistance = 0;
         let bldgPointList = [];
+        const bldgFeatures = geoJsonBldg.value.features || [];
         for (let i = 0; i < center_line.length - 1; i++) {
           let polygon = turf.polygon([[
             left_line[i],
@@ -301,9 +333,9 @@ export default {
           let centerPointStart = turf.point([center_line[i][0], center_line[i][1]]);
           let centerPointEnd = turf.point([center_line[i + 1][0], center_line[i + 1][1]]);
           let centerLine = turf.lineString([[center_line[i][0], center_line[i][1]], [center_line[i + 1][0], center_line[i + 1][1]]]);
-          for (let j = 0; j < geoJsonBldg.value.features.length; j++) {
+          for (let j = 0; j < bldgFeatures.length; j++) {
             let innerPointList = [];
-            let feature = geoJsonBldg.value.features[j];
+            let feature = bldgFeatures[j];
             let pointNum = feature.geometry.coordinates[0].length;
             for (let k = 0; k < pointNum; k++) {
               // 建造物の頂点を一個ずつ見ていく
@@ -373,13 +405,13 @@ export default {
           {
             label: 'Altitude',
             data: altitudeY,
-            borderColor: '#000000',
+            borderColor: 'rgb(83, 90, 110)',
             borderWidth: 2,
-            backgroundColor: "#000000",
+            backgroundColor: 'rgb(83, 90, 110)',
             fill: true,
           },
           {
-            label: 'Altitude + 150m',
+            label: '高度150m（高度は目安です）',
             data: altitudeY150,
             borderColor: '#F16682',
             borderWidth: 2,
@@ -391,11 +423,13 @@ export default {
         graphData.value = {
           labels: altitudeX,
           datasets: datasets,
+          junctionList: junctionList,
         };
 
         // 最大値と座標リストでchartOptionsを更新
         chartOptions.value = {
           ...chartOptions.value,
+          layout: { padding: { top: 30, left: 16, right: 16 } },
           scales: {
             x: {
               ...chartOptions.value.scales.x, // 既存の設定を保持
@@ -409,6 +443,7 @@ export default {
           },
           coordinatesList: plotData.value,
           bldgList: bldgPointList,
+          junctionList: junctionList,
         };
 
         // VueがDOMの更新を終えた後にグラフを更新する
@@ -416,6 +451,7 @@ export default {
           if (chartRef.value && chartRef.value.chart) {
             chartRef.value.chart.update();
           }
+          isLoading.value = false;
         });
       }
     });
@@ -423,8 +459,68 @@ export default {
     return {
       graphData,
       chartOptions,
-      chartRef
+      chartRef,
+      isLoading,
     };
   },
 };
 </script>
+
+<style scoped>
+.chart-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.chart-altitude-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 11px;
+  color: #555;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.chart-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.chart {
+  width: 100%;
+  height: 180px;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: rgb(241, 242, 245);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-loading {
+  font-size: 12px;
+  color: #888;
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-left: 2px;
+}
+
+.chart-legend-dash {
+  display: inline-block;
+  width: 24px;
+  border-top: 2px dashed #F16682;
+  flex-shrink: 0;
+}
+
+.chart-legend-text {
+  font-size: 11px;
+  color: #555;
+}
+</style>
