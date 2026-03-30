@@ -2,6 +2,38 @@ export type CommonResponse = {
   errorDetail: string // エラー詳細
 }
 
+/** 料金表管理情報（API レスポンス用） */
+export type PriceInfoRecord = {
+  priceId: string | null
+  price: number
+  priceType: number
+  pricePerUnit: number
+  effectiveStartTime: string
+  effectiveEndTime: string
+  priority?: number
+  processingType?: number
+}
+
+/** 補足資料（API レスポンス用） */
+export type FileInfoRecord = {
+  fileId: string | null
+  fileLogicalName?: string
+  filePhysicalName?: string
+  fileData?: string
+  processingType?: number
+}
+
+/** ペイロード情報（API レスポンス用） */
+export type PayloadInfoRecord = {
+  processingType?: number
+  payloadId: string | null
+  payloadName: string
+  payloadDetailText: string
+  imageData: string
+  filePhysicalName: string
+  fileData: string
+}
+
 /**
    * 機体情報登録
    */
@@ -20,7 +52,13 @@ export type AircraftRegisterRequestParams = {
   ownerType: number // 機体所有種別
   ownerId?: string // 所有者ID
   imageData?: string // 画像
-  operatorId?: string // オペレータID
+  // 料金表管理改修  Start
+  publicFlag: boolean // 公開フラグ
+  modelNumber?: string // 型式番号
+  fileInfos?: FileInfoRecord[] // 補足資料
+  payloadInfos?: PayloadInfoRecord[] // ペイロード情報
+  priceInfos?: PriceInfoRecord[] // 料金表管理情報
+  // 料金表管理改修  End
 }
 export type AircraftRegisterResponse = CommonResponse | {
   aircraftId: string
@@ -44,7 +82,13 @@ export type AircraftUpdateByPkRequestParams = {
   ownerType?: number // 機体所有種別
   ownerId?: string // 所有者ID
   imageData?: string // 画像
-  operatorId?: string // オペレータID
+  // 料金表管理改修  Start
+  modelNumber?: string // 型式番号
+  publicFlag: boolean // 公開フラグ
+  fileInfos?: FileInfoRecord[] // 補足資料
+  payloadInfos?: PayloadInfoRecord[] // ペイロード情報
+  priceInfos?: PriceInfoRecord[] // 料金表管理情報
+  // 料金表管理改修  End
 }
 export type AircraftUpdateByPkResponse = AircraftRegisterResponse
 
@@ -98,6 +142,13 @@ export type AircraftGetByPkResponse = {
   ownerType: number // 機体所有種別
   ownerId: string // 所有者ID
   imageData: string // 画像
+  // 料金表管理改修  Start
+  modelNumber?: string // 型式番号
+  operatorId?: string // オペレータID
+  priceInfos: PriceInfoRecord[] // 料金表管理情報
+  fileInfos: FileInfoRecord[] // 補足資料
+  payloadInfos: PayloadInfoRecord[] // ペイロード情報
+  // 料金表管理改修  End
 }
 
 /**
