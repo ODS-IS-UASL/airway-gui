@@ -8,30 +8,36 @@
       <dd class="e-configuredInformationValue">{{ purpose }}</dd>
     </div>
     <div>
-      <dt class="e-configuredInformationTitle">機体種別：</dt>
-      <dd class="e-configuredInformationValue">{{ type }}</dd>
+      <dt class="e-configuredInformationTitle">モデル名：</dt>
+      <dd class="e-configuredInformationValue">[ {{ joinedType }} ]</dd>
     </div>
     <div>
       <dt class="e-configuredInformationTitle">航路：</dt>
       <dd class="e-configuredInformationValue">{{ routeName }}</dd>
     </div>
     <div>
-      <dt class="e-configuredInformationTitle">最大落下許容範囲：</dt>
+      <dt class="e-configuredInformationTitle">最大落下範囲：</dt>
       <dd class="e-configuredInformationValue">{{ fallToleranceRange }}</dd>
     </div>
   </dl>
   <!-- 詳細情報 -->
   <div id="content" class="b-routeCutPlaneSetting">
     <h2 class="u-invisible">切断面設定</h2>
-    <!-- 最大許容範囲切断設定地図 -->
-    <h3 class="u-invisible">最大落下許容範囲切断設定地図</h3>
-    <CreateAirway @update-data="handlerUpdateValue" @isJunctionSetting="handlerIsJunctionSetting" :message="fallToleranceRangeId" :drone="drone" :stepNo="stepNo"/>
+    <!-- 最大落下範囲切断設定地図 -->
+    <h3 class="u-invisible">最大落下範囲切断設定地図</h3>
+    <CreateAirway
+      @update-data="handlerUpdateValue"
+      @isJunctionSetting="handlerIsJunctionSetting"
+      :message="fallToleranceRangeId"
+      :stepNo="stepNo"
+      :aircrafts="aircrafts"
+    />
  </div>
 </template>
 
 <script>
 import "leaflet/dist/leaflet.css";
-import { ref, reactive, onMounted } from "vue";
+import { ref } from "vue";
 import CreateAirway from "~/components/map/createAirway.vue";
 
 const isJunctionSetting = ref(false);
@@ -47,7 +53,6 @@ export default {
       "airwayId": "airway_id_A",
       "airwayName": "",
       "flightPurpose": "",
-      "droneList": "",
       "createdAt": getCurrentDate(),
       "updatedAt": getCurrentDate(),
       "airwayJunctions": [],
@@ -61,12 +66,17 @@ export default {
       routeName: this.rangeData.routeName,  
       fallToleranceRange: this.rangeData.fallToleranceRange,  
       fallToleranceRangeId: this.rangeData.fallToleranceRangeId,
+      aircrafts: this.rangeData.aircrafts,
+      selectedModels: this.rangeData.selectedModels,
       
-      droneList: this.rangeData.type,
-      drone: this.rangeData.drone,
       isJunctionSetting: isJunctionSetting.value,
       stepNo: this.stepNo,
     };
+  },
+  computed: {
+    joinedType() {
+      return this.selectedModels.join();
+    }
   },
   methods: {
     handleCorridorDataAdded() {
@@ -82,7 +92,6 @@ export default {
         
         this.corridorList.airwayName = this.routeName;
         this.corridorList.flightPurpose = this.purpose;
-        this.corridorList.droneList = this.droneList;
 
         this.corridorList.determination_id = newValue.determination_id;
         this.corridorList.despersion_nodes = newValue.despersion_nodes;
