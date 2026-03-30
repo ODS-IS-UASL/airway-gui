@@ -1,55 +1,4 @@
 <template>
-  <!-- モーダルウィンドウ -->
-  <div v-if="showStakeholdersPopup" class="popup">
-    <!-- オプション検索の内容 -->
-    <div class="item-center">
-      <v-data-table
-        v-model:items-per-page="itemsPerPage"
-        :items="stakeholders"
-        item-value="operatorId"
-        item-key="operatorId"
-        class="elevation-1"
-        hide-default-header
-        hide-default-footer
-        style="max-height: 400px; overflow-y: auto;"
-        :items-per-page-options="[5, 10, 15, 20]"
-      >
-        <template v-slot:top>
-          <thead>
-            <tr>
-              <th style="width: 100px; text-align: center; align-items: center;">
-                <v-checkbox
-                  v-model="stakeholdersAllSelected"
-                  @change="toggleSelectAll"
-                ></v-checkbox>
-              </th>
-              <th style="width: 300px; text-align: center; align-items: center;">事業者・会社名</th>
-              <th style="width: 300px; text-align: center; align-items: center;">区分</th>
-            </tr>
-          </thead>
-        </template>
-        <template v-slot:item="{ item }">
-          <tr>
-            <td style="width: 100px; text-align: center;table-layout: fixed;">
-              <v-checkbox
-                v-model="stakeholdersSelected"
-                :value="item.operatorId"
-                @click.stop
-              ></v-checkbox>
-            </td>
-            <td style="width: 300px; text-align: left;">{{ item.operatorName }}</td>
-            <td style="width: 300px; text-align: left;">{{ item.roleList }}</td>
-          </tr>
-        </template>
-      </v-data-table>
-    </div>
-    <!-- /.item-center -->
-    <div class="item-center">
-      <input type="button" class="e-button-search" value="登録" @click="stakeholdersRegister" />
-    </div>
-  </div>
-  <!-- /.popup -->
-
   <!-- 詳細情報 -->
   <v-card-text class="drn_content">
     <div class="drn_content__body">
@@ -57,109 +6,154 @@
       <v-sheet class="drn_content__data">
         <div class="drn_form">
 
-          <!-- 関係者登録 -->
           <div class="drn_form__header">
             <div class="drn_form__title">
               基本情報選択
             </div>
             <!-- /.drn_form__title -->
-            <v-btn
-              variant="outlined"
-              rounded="pill"
-              class="drn_form__btn drn_form__btn--member_add item-right"
-              v-if = "role == 1"
-              @click="togglePopup"
-            >{{ stakeholdersBtnLabel }}</v-btn>
           </div>
           <!-- /.drn_form__header -->
 
           <div class="drn_form__body">
 
-              <label class="drn_form__label">航路名</label>
-              <v-text-field
-                type="input"
-                density="compact"
-                variant="outlined"
-                placeholder="航路名を入力"
-                class="drn_form__input"
-                v-model="routeName"
-                id="routeNameField"
-                maxlength="200"
-                @change="updateBasicInfomation"
-              ></v-text-field>
+            <label class="drn_form__label">航路名</label>
+            <v-text-field
+              type="input"
+              density="compact"
+              variant="outlined"
+              placeholder="航路名を入力"
+              class="drn_form__input"
+              v-model="routeName"
+              id="routeNameField"
+              maxlength="200"
+              @change="updateBasicInfomation"
+            ></v-text-field>
 
-              <label class="drn_form__label">飛行目的</label>
-              <v-select
-                density="compact"
-                variant="outlined"
-                placeholder="------------------"
-                :items="purposeItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="selectedPurpose"
-                @update:modelValue="updateBasicInfomation"
-              ></v-select>
+            <label class="drn_form__label">飛行目的</label>
+            <v-select
+              density="compact"
+              variant="outlined"
+              placeholder="------------------"
+              :items="purposeItems"
+              menu-icon="fa fa-sharp fa-regular fa-angle-down"
+              class="drn_form__select"
+              v-model="selectedPurpose"
+              @update:modelValue="updateBasicInfomation"
+            ></v-select>
 
-              <label class="drn_form__label">エリア</label>
-              <v-select
-                density="compact"
-                variant="outlined"
-                placeholder="------------------"
-                :items="areaNameItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="areaName"
-                @update:modelValue="updateBasicInfomation"
-              ></v-select>
+            <label class="drn_form__label">エリア</label>
+            <v-select
+              density="compact"
+              variant="outlined"
+              placeholder="------------------"
+              :items="areaNameItems"
+              menu-icon="fa fa-sharp fa-regular fa-angle-down"
+              class="drn_form__select"
+              v-model="areaName"
+              @update:modelValue="updateBasicInfomation(); resetFallToleranceRangeItems()"
+            ></v-select>
 
-              <label class="drn_form__label">最大落下許容範囲</label>
-              <v-select
-                density="compact"
-                variant="outlined"
-                placeholder="------------------"
-                :items="fallToleranceRangeItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="fallToleranceRange"
-                @update:modelValue="updateBasicInfomation"
-              ></v-select>
+            <label class="drn_form__label">最大落下範囲</label>
+            <v-select
+              density="compact"
+              variant="outlined"
+              placeholder="------------------"
+              :items="viewFallToleranceRangeItems"
+              menu-icon="fa fa-sharp fa-regular fa-angle-down"
+              class="drn_form__select"
+              v-model="fallToleranceRange"
+              :disabled="!areaName"
+              @update:modelValue="updateBasicInfomation"
+            ></v-select>
 
-              <label class="drn_form__label">機体種別</label>
-              <v-select
-                density="compact"
-                variant="outlined"
-                placeholder="------------------"
-                :items="uniqueTypeItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="selectedType"
-                @update:modelValue="filterLengths"
-              ></v-select>
+            <!-- ドローン機体登録 -->
+            <div class="drn_form__label" style="margin-bottom: 8px;">
+              ドローン機体登録
+            </div>
 
-              <label class="drn_form__label">サイズ(アーム展開時)</label>
-              <v-select
-                density="compact"
-                variant="outlined"
-                placeholder="------------------"
-                :items="lengthOptionItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="selectedLength"
-                @update:modelValue="filterModels"
-              ></v-select>
+            <!-- チップ + 追加ボタン -->
+            <div class="mt-2 chips-inline">
+              <v-chip
+                v-for="a in registeredAircrafts"
+                :key="a.uiId"
+                class="ma-1"
+                closable
+                @click:close.stop.prevent="removeAircraftById(a.uiId)"
+              >
+                {{ a.modelNumber }}
+              </v-chip>
 
-              <label class="drn_form__label">モデル </label>
-              <v-select
-                density="compact"
+              <v-btn
+                class="ma-1 add-chip-btn add-chip-btn--white-outline"
                 variant="outlined"
-                placeholder="------------------"
-                :items="filteredModelItems"
-                menu-icon="fa fa-sharp fa-regular fa-angle-down"
-                class="drn_form__select"
-                v-model="selectedModel"
-                @update:modelValue="updateBasicInfomation"
-              ></v-select>
+                icon
+                rounded="circle"
+                size="25"
+                @click="openAircraftModal"
+                aria-label="機体を追加"
+              >
+                <v-icon size="20">mdi-plus</v-icon>
+              </v-btn>
+            </div>
 
+            <!-- 機体追加モーダル：中央寄せ（v-dialog デフォルト） -->
+            <v-dialog
+              v-model="showAircraftModal"
+              max-width="600"
+              scrollable>
+              <v-card>
+                <v-card-title>機体の追加</v-card-title>
+                <v-card-text>
+                  <label class="drn_form__label">機体種別</label>
+                  <v-select
+                    density="compact"
+                    variant="outlined"
+                    placeholder="------------------"
+                    :items="uniqueTypeItems"
+                    menu-icon="fa fa-sharp fa-regular fa-angle-down"
+                    class="drn_form__select"
+                    v-model="newAircraft.selectedType"
+                    @update:modelValue="onNewTypeChange"
+                  />
+
+                  <label class="drn_form__label">サイズ(アーム展開時)</label>
+                  <v-select
+                    density="compact"
+                    variant="outlined"
+                    placeholder="------------------"
+                    :items="lengthOptionItems"
+                    menu-icon="fa fa-sharp fa-regular fa-angle-down"
+                    class="drn_form__select"
+                    v-model="newAircraft.selectedLength"
+                    @update:modelValue="onNewLengthChange"
+                  />
+
+                  <label class="drn_form__label">モデル</label>
+                  <v-select
+                    density="compact"
+                    variant="outlined"
+                    placeholder="------------------"
+                    :items="newAircraft.filteredModelItems"
+                    item-title="title"
+                    item-value="value"
+                    :return-object="true"
+                    menu-icon="fa fa-sharp fa-regular fa-angle-down"
+                    class="drn_form__select"
+                    v-model="newAircraft.selectedModel"
+                  />
+                </v-card-text>
+                <v-card-actions>
+                  <v-spacer></v-spacer>
+                  <v-btn variant="text" @click="closeAircraftModal">キャンセル</v-btn>
+                  <v-btn
+                    variant="flat"
+                    color="primary"
+                    :disabled="!canAddNewAircraft"
+                    @click="addAircraft"
+                  >追加</v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-dialog>
           </div>
           <!-- .drn_form__body -->
         </div>
@@ -177,6 +171,7 @@
         :areaInfo="areaNames"
         :rangeId="fallToleranceRangeId"
         :rangeInfo="fallToleranceRanges"
+        ref="childRef"
       />
     </v-sheet>
     <!-- .drn_content__map -->
@@ -190,7 +185,6 @@
 
 <script>
 import MapComponent from "~/components/map/showFallToleranceRangeGrayScale.vue";
-import axios from 'axios';
 
 export default {
   components: {
@@ -223,13 +217,13 @@ export default {
       areaName: null,
       areaNameItems: [], // v-select 選択肢用
 
-      // 最大落下許容範囲
-      fallToleranceRanges: [], // input from API(${airwayApiBaseUrl}/fall-tolerance-range)
+      // 最大落下範囲
+      fallToleranceRanges: [], // input from API(/api/airway/max-fall-range)
       fallToleranceRange: '------------------',
       fallToleranceRangeItems: [], // v-select 選択肢用
 
       // 機体種別
-      uniqueTypes: [], // input from API(${airwayApiBaseUrl}/aircraft)
+      uniqueTypes: [], // input from API(/api/airway/aircraft)
       selectedType: '------------------',
       uniqueTypeItems: [], // v-select 選択肢用
 
@@ -237,12 +231,12 @@ export default {
       selectedLength: '------------------',
       lengthOptionItems: [
         {title: '500mm未満',        value: '500mm未満'},
-        {title: '500mm以上950未満', value: '500mm以上950mm未満'},
+        {title: '500mm以上950mm未満', value: '500mm以上950mm未満'},
         {title: '950mm以上',        value: '950mm以上'},
       ], // v-select 選択肢用
 
       // モデル
-      filteredModels: [], // input from API(${airwayApiBaseUrl}/aircraft)
+      filteredModels: [], // input from API(/api/airway/aircraft)
       selectedModel: '------------------',
       filteredModelItems: [], // v-select 選択肢用
 
@@ -255,29 +249,53 @@ export default {
 
       basicInfomation: {
         purpose: '',
-        type: '',
         routeName: '',
         fallToleranceRange: '',
         fallToleranceRangeId: '',
-        drone: '',
-        stakeholders: [],
-        stakeholdersSelected: [],
       },
 
-      showStakeholdersPopup: false,
-      itemsPerPage: 10,
-      stakeholders: [],
-      stakeholdersSelected: [],
-      stakeholdersAllSelected: false,
-      stakeholdersNum: 0,
       cookie_role: null,
       role: null,
       stepNo: this.stepNo,
+
+      // 機体追加モーダル管理
+      showAircraftModal: false,
+      newAircraft: {
+        selectedType: '------------------',
+        selectedLength: '------------------',
+        selectedModel: '------------------',
+        filteredModelItems: [],
+      },
+      registeredAircrafts: [],
+      aircraftIdSeq: 0,
     };
   },
   computed: {
-    stakeholdersBtnLabel() {
-      return `関係者登録(${this.stakeholdersNum})`;
+    // 追加ボタン活性/非活性
+    canAddNewAircraft() {
+      const n = this.newAircraft;
+      const hasModel = !!n.selectedModel?.raw;
+      return (
+        n.selectedType !== '------------------' &&
+        n.selectedLength !== '------------------' &&
+        hasModel
+      );
+    },
+    viewFallToleranceRangeItems() {
+      if (this.areaName) {
+        const list = this.fallToleranceRanges.fallToleranceRanges.filter(item => item.areaName === this.areaName)
+        this.fallToleranceRangeItems = [];
+        list.forEach(element => {
+          this.fallToleranceRangeItems.push({
+            title: element.name,
+            value: element.name
+          });
+        });
+        return this.fallToleranceRangeItems;
+      } else {
+        console.log("No Data")
+        return [];
+      }
     }
   },
   watch: {
@@ -288,95 +306,15 @@ export default {
     }
   },
   methods: {
-    togglePopup() {
-      this.showStakeholdersPopup = !this.showStakeholdersPopup;
-    },
-    toggleSelectAll() {
-      if (this.stakeholdersAllSelected) {
-        this.stakeholdersSelected = this.stakeholders.map(item => item.operatorId);
-      } else {
-        this.stakeholdersSelected = [];
-      }
-    },
-    stakeholdersRegister() {
-      const selectedData = this.stakeholders.filter(item =>
-        this.stakeholdersSelected.includes(item.operatorId)
-      );
-
-      // 選択されたアイテムの数を取得
-      this.stakeholdersNum = selectedData.length;
-      this.updateBasicInfomation()
-
-      // ポップアップを非表示にする
-      this.showStakeholdersPopup = false;
-    },
     getUniqueTypes() {
       const types = this.droneItems.aircraft.map(item => item.type);
-      this.uniqueTypes = [...new Set(types)]; // 重複を排除
-      this.uniqueTypeItems = [];
-      for (let i = 0; i < this.uniqueTypes.length; ++i) {
-        const itemValue = this.uniqueTypes[i];
-        this.uniqueTypeItems.push({
-          title: itemValue,
-          value: itemValue
-        });
-      }
+      this.uniqueTypes = [...new Set(types)];
+      this.uniqueTypeItems = this.uniqueTypes.map(v => ({ title: v, value: v }));
       this.updateBasicInfomation()
     },
-    filterLengths() {
-      this.selectedLength = '------------------';
-      this.selectedModel = '------------------';
-      this.filterModels();
-      this.updateBasicInfomation();
-    },
-    filterModels() {
-      this.selectedModel = '------------------';
-      if (this.droneItems && this.droneItems.aircraft) {
-        let minLength = 0;
-        let maxLength = Infinity;
-
-        if (this.selectedLength === '500mm未満') {
-          maxLength = 500;
-        } else if (this.selectedLength === '500mm以上950mm未満') {
-          minLength = 500;
-          maxLength = 950;
-        } else if (this.selectedLength === '950mm以上') {
-          minLength = 950;
-        } else if (this.selectedLength === '------------------') {
-          this.filteredModels = []; // 選択肢がない場合は空の配列を設定
-          return;
-        }
-      this.filteredModels = this.droneItems.aircraft
-        .filter(item => item.type === this.selectedType && item.length >= minLength && item.length < maxLength)
-        .map(item => item.name);
-      } else {
-        console.error('droneItems.aircraft is undefined');
-      }
-      this.filteredModelItems = [];
-      if (this.filteredModels) {
-        for (let i = 0; i < this.filteredModels.length; ++i) {
-          const itemValue = this.filteredModels[i];
-          this.filteredModelItems.push({
-            title: itemValue,
-            value: itemValue
-          });
-        }
-      }
-
-      this.updateBasicInfomation()
-    },
-    updateBasicInfomation() {
-      const drone = this.droneItems.aircraft.find(item => item.name === this.selectedModel);
-
-      this.basicInfomation.purpose = this.selectedPurpose
-      this.basicInfomation.type = [this.selectedModel]
-      this.basicInfomation.routeName = this.routeName
-      this.basicInfomation.fallToleranceRange = this.fallToleranceRange
-      this.basicInfomation.fallToleranceRangeId = this.fallToleranceRangeId
-      this.basicInfomation.drone = JSON.stringify(drone)
-      this.basicInfomation.stakeholders = this.stakeholders
-      this.basicInfomation.stakeholdersSelected = this.stakeholdersSelected
-      this.$emit('update:basicInfomation', this.basicInfomation);
+    resetFallToleranceRangeItems() {
+      this.fallToleranceRange = []
+      this.$refs.childRef.resetSelectedFallToleranceRange();
     },
     async rolecheck() {
       // ロールチェック
@@ -401,42 +339,166 @@ export default {
           this.role = null;
           break;
       }
-    }
+    },
+    // 基本情報集約（registeredAircrafts ベース）
+    updateBasicInfomation() {
+      const first = this.registeredAircrafts[0] || null;
+
+      const findByKeyOrName = (a) => {
+        if (a.selectedModelKey) {
+          return this.droneItems?.aircraft?.find(item => this.getAircraftKey(item) === a.selectedModelKey);
+        }
+        return this.droneItems?.aircraft?.find(item =>
+          item.name === a.name && item.type === a.type && item.length === a.length
+        );
+      };
+
+      const drones = (this.registeredAircrafts || [])
+        .map(a => findByKeyOrName(a))
+        .filter(Boolean);
+
+      const firstDrone = first ? findByKeyOrName(first) : null;
+
+      this.basicInfomation.purpose = this.selectedPurpose;
+      this.basicInfomation.routeName = this.routeName;
+      this.basicInfomation.fallToleranceRange = this.fallToleranceRange;
+      this.basicInfomation.fallToleranceRangeId = this.fallToleranceRangeId;
+
+      this.basicInfomation.aircrafts = drones.map(d => JSON.stringify(d));
+      this.basicInfomation.selectedModels = this.registeredAircrafts.map(a => a.modelNumber);
+
+      this.$emit('update:basicInfomation', this.basicInfomation);
+    },
+    // モーダル操作（中央寄せなので位置計測不要）
+    openAircraftModal() {
+      this.newAircraft = {
+        selectedType: '------------------',
+        selectedLength: '------------------',
+        selectedModel: null,
+        filteredModelItems: [],
+      };
+      this.showAircraftModal = true;
+    },
+    closeAircraftModal() {
+      this.showAircraftModal = false;
+    },
+    // モーダル内選択変更
+    onNewTypeChange() {
+      this.newAircraft.selectedLength = '------------------';
+      this.newAircraft.selectedModel = '------------------';
+      this.buildNewAircraftModelItems();
+    },
+    onNewLengthChange() {
+      this.newAircraft.selectedModel = '------------------';
+      this.buildNewAircraftModelItems();
+    },
+    // ユニークキー生成
+    getAircraftKey(item) {
+      const id = item?.aircraft_info_id ?? item?.id;
+      const key = id ?? `${item?.name}|${item?.type}|${item?.length}`;
+      return String(key);
+    },
+    // 重複判定：type・length・name で一致
+    isSameByTLN(a, item) {
+      return (a.type === item.type && a.length === item.length && a.name === item.name);
+    },
+    // モデル選択肢生成（モーダル）
+    buildNewAircraftModelItems() {
+      const tab = this.newAircraft;
+      tab.filteredModelItems = [];
+
+      if (!this.droneItems || !this.droneItems.aircraft) return;
+      if (tab.selectedLength === '------------------') return;
+
+      let minLength = 0;
+      let maxLength = Infinity;
+      if (tab.selectedLength === '500mm未満') {
+        maxLength = 500;
+      } else if (tab.selectedLength === '500mm以上950mm未満') {
+        minLength = 500; maxLength = 950;
+      } else if (tab.selectedLength === '950mm以上') {
+        minLength = 950;
+      }
+
+      const candidateItems = this.droneItems.aircraft
+        .filter(item =>
+          item.type === tab.selectedType &&
+          item.length >= minLength &&
+          item.length < maxLength
+        );
+
+      const modelsWithoutDuplicates = candidateItems.filter(item => {
+        return !this.registeredAircrafts.some(a => this.isSameByTLN(a, item));
+      });
+
+      tab.filteredModelItems = modelsWithoutDuplicates.map(item => ({
+        title: item.modelNumber,
+        value: this.getAircraftKey(item),
+        raw: item,
+      }));
+    },
+    // 追加
+    addAircraft() {
+      const n = this.newAircraft;
+      if (!this.canAddNewAircraft) return;
+
+      const sel = n.selectedModel;   // { title, value, raw }
+      const master = sel?.raw;
+      if (!master) {
+        alert('選択したモデルの情報が見つかりません。');
+        return;
+      }
+
+      const exists = this.registeredAircrafts.some(a => this.isSameByTLN(a, master));
+      if (exists) {
+        alert('同一の機体種別・モデル・長さの組み合わせが既に登録されています。');
+        return;
+      }
+
+      const uiId = ++this.aircraftIdSeq;
+
+      this.registeredAircrafts.push({
+        uiId,
+        selectedModelKey: sel.value,
+        selectedLengthCategory: n.selectedLength,
+
+        // APIフィールド
+        maker: master.maker,
+        modelNumber: master.modelNumber,
+        name: master.name,
+        type: master.type,
+        ip: master.ip,
+        length: master.length,
+        weight: master.weight,
+        maximumTakeoffWeight: master.maximumTakeoffWeight,
+        maximumFlightTime: master.maximumFlightTime,
+        deviation_range: master.deviation_range,
+        fallingModel: master.fallingModel,
+        aircraft_info_id: master.aircraft_info_id,
+        id: master.id,
+        airwayId: master.airwayId,
+        airwayName: master.airwayName,
+        area: master.area,
+      });
+
+      this.closeAircraftModal();
+      this.updateBasicInfomation();
+    },
+    // 削除
+    removeAircraft(index) {
+      this.registeredAircrafts.splice(index, 1);
+      this.updateBasicInfomation();
+    },
+    removeAircraftById(uiId) {
+      const i = this.registeredAircrafts.findIndex(x => x.uiId === uiId);
+      if (i !== -1) {
+        this.registeredAircrafts.splice(i, 1);
+        this.updateBasicInfomation();
+      }
+    },
   },
   async mounted() {
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const operatorUrl = `${miscApiBaseUrl}/operator`;
-    const operatorHeaders = {
-          headers: {
-                  'accept': 'application/json',
-          },
-    };
-    const operatorRes = await axios_get(operatorUrl, {}, operatorHeaders);
-    console.log(operatorRes);
-    if (operatorRes.status != 200) {
-      console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-      this.response = null;
-      return;
-    }
-    this.response = operatorRes.data;
-
-    const roleMap = {
-      "1": "航路運営事業者",
-      "2": "運航事業者",
-      "3": "関係者"
-    };
-    if (this.response) {
-      this.stakeholders = this.response.operatorList.map(item => ({
-        operatorId: item.operatorId, 
-        notificationType: item.notificationType,
-        operatorName: item.operatorName,
-        roleList: item.roleList.map(item => roleMap[item]).join(", "),
-        notificationTargetList: item.notificationTargetList,
-        linkAirwayList: item.linkAirwayList, 
-      }));
-    }
-
-    axios.get('/api/getAreaJsonData')
+    $fetch('/api/getAreaJsonData')
     .then(response => {
       // JSONデータの取得が成功した場合、routesに代入
       const areaNames = response.data;
@@ -453,38 +515,33 @@ export default {
           });
         }
       }
-
+      
     })
     .catch(error => {
       console.error('JSONの読み込みに失敗しました:', error);
     });
 
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-    const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+    // 最大落下範囲取得
+    const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+      method: 'GET',
+      query: { businessNumber: localStorage.getItem('uasl:user:parentOperatorId') }
+    });
     console.log(rangeRes);
-    if (rangeRes.status != 200) {
+    if (rangeRes.status !== 200) {
       console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
       this.rangeData = null;
       return;
     }
-    this.rangeData = rangeRes.data;
-    this.fallToleranceRanges = rangeRes.data;
+    const rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
+    this.rangeData = rangeData;
+    this.fallToleranceRanges = rangeData;
     this.fallToleranceRangeItems = [];
-    if (this.fallToleranceRanges && this.fallToleranceRanges.fallToleranceRanges) {
-      for (let i = 0; i < this.fallToleranceRanges.fallToleranceRanges.length; ++i) {
-        const itemValue = this.fallToleranceRanges.fallToleranceRanges[i].name;
-        this.fallToleranceRangeItems.push({
-          title: itemValue,
-          value: itemValue
-        });
-      }
-    }
 
-    const droneUrl = `${airwayApiBaseUrl}/aircraft`;
-    const droneRes = await axios_get(droneUrl, {}, {});
+    const droneRes = await $fetch('/api/airway/aircraft', { 
+      method: 'GET'
+    });
     console.log(droneRes);
-    if (droneRes.status != 200) {
+    if (droneRes.status !== 200) {
       console.error(`error: get drone info {status: ${droneRes.status}}.`);
       this.rangeData = null;
       return;
@@ -500,39 +557,24 @@ export default {
 </script>
 
 <style>
-.item-right {
+/* ラベルと＋ボタンを横並び・折返し */
+.chips-inline {
   display: flex;
-  margin-left: 50%; 
+  flex-wrap: wrap;
+  align-items: center;
 }
 
-.e-button-search {
-  width: 98px;
-  height: 25px;
-  background: var(--txt_-333333) 0% 0% no-repeat padding-box;
-  border: 1px solid var(--line_-999999);
-  font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-14)/var(--unnamed-line-spacing-14) var(--unnamed-font-family-biz-udpgothic);
-  letter-spacing: var(--unnamed-character-spacing-0);
-  color: var(--unnamed-color-ffffff);
-  text-align: center;
-  margin-top: 15px;
-  margin-bottom: 10px;
+.add-chip-btn--white-outline {
+  background-color: #fff;
 }
-
-.popup {
-  position: absolute;
-  top: 165px;
-  left: 20px;
-  width: 800px;
-  height: auto;
-  background-color: #fefefe;
-  border: 1px solid #888;
-  padding: 21px 55px;
-  z-index: 10000;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+.add-chip-btn--white-outline.v-btn--variant-outlined {
+  border: 1px solid #000;
 }
-
-.item-center {
-  display: flex;
-  justify-content: center;
+.add-chip-btn--white-outline .v-icon {
+  color: #000;
+}
+.add-chip-btn--white-outline:hover,
+.add-chip-btn--white-outline:focus {
+  background-color: #fff;
 }
 </style>
