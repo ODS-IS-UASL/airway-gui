@@ -12,18 +12,27 @@ import { useRouter } from 'vue-router';
 import LoadingDialog from '~/components/dialogs/LoadingSpiner.vue'
 
 const step = ref(0)
-const stepTitle = ref('新規最大落下許容範囲')
+const stepTitle = ref('新規最大落下範囲')
 const nextButton = ref('範囲設定')
 const isDialogVisible = ref(false)
 const rangeName = ref('')
+const typeId = ref('')
+const regionId = ref('')
 const areaName = ref('')
 const areaInfo= ref({})
 const markerList = ref([]);
 const markerCount = ref(0)
 const createdAt = ref(new Date().toLocaleDateString('ja-JP'))
+const STATUS = {
+  OK: 'OK',
+  NG: 'NG',
+};
+const createStatus = ref(STATUS.OK)
 const rangeData = {
   areaInfo,
   rangeName,
+  typeId,
+  regionId,
   areaName,
   markerList,
   markerCount,
@@ -68,6 +77,8 @@ if (process.client) {
 const handlePlaceUpdate = (place) => {
   console.log(areaName.value)
   rangeName.value = place.rangeName
+  typeId.value = place.typeId
+  regionId.value = place.regionId
   areaName.value = place.areaName
   areaInfo.value = place.areaInfo
 }
@@ -87,6 +98,8 @@ const navigate = (next) => {
       case 1:
         // ステップ1の条件チェック
         if (!(rangeName.value) ||
+            !(typeId.value) ||
+            !(regionId.value) ||
             !(areaName.value)) {
           errorMessage.value = 'すべての項目を入力してください。'
           return false
@@ -118,11 +131,11 @@ const navigate = (next) => {
       return
     case 0:
       nextButton.value = '範囲設定へ'
-      stepTitle.value = '新規最大落下許容範囲'
+      stepTitle.value = '新規最大落下範囲'
       break
     case 1:
       nextButton.value = '申請内容確認'
-      stepTitle.value = '新規最大落下許容範囲'
+      stepTitle.value = '新規最大落下範囲'
       if (next) {
         rangeData.markerList.value = []
         rangeData.markerCount.value = 0
@@ -130,8 +143,8 @@ const navigate = (next) => {
       }
       break
     case 2:
-      nextButton.value = '最大落下許容範囲申請'
-      stepTitle.value = '最大落下許容範囲'
+      nextButton.value = '最大落下範囲申請'
+      stepTitle.value = '最大落下範囲'
       if (next) confirmationKey.value = confirmationKey.value + 1
       break
     case 3:
@@ -149,49 +162,53 @@ const generateJson = () => {
     new_markerList.push([coord[1], coord[0]]);
   })
   return {
-    "fallToleranceRangeId": fallToleranceRangeId.value,
     "name": rangeName.value,
     "areaName": areaName.value,
-    "airwayOperatorId": cookie_role.value.operatorId,
+    "typeId": typeId.value,
+    "regionId": regionId.value,
+    "uaslOperatorId": cookie_role.value.operatorId,
     "geometry": {
       "type": "Polygon",
       "coordinates": [new_markerList]
     },
-    "businessNumber": useRuntimeConfig().public.businessNumber,
+    "businessNumber": localStorage.getItem('uasl:user:parentOperatorId'),
   };
 };
 const showModal = async () => {
 
-  // 最大落下許容範囲申請ボタン無効化
+  // 最大落下範囲申請ボタン無効化
   isProcessing.value = true;
-  console.log(`予最大落下許容範囲申請ボタン無効化:${isProcessing.value}`);
+  console.log(`最大落下範囲申請ボタン無効化:${isProcessing.value}`);
   // ローディング開始
   isLoading.value = true;
-  console.log(`最大落下許容範囲申請ローディング開始:${isLoading.value}`);
+  console.log(`最大落下範囲申請ローディング開始:${isLoading.value}`);
 
-  const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-  const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
   const rangeBody = generateJson();
-  const rangeRes = await axios_post(rangeUrl, rangeBody, {});
+  const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+    method: 'POST',
+    body: rangeBody
+  });
   console.log(rangeRes);
   if (rangeRes.status == 201) {
     isDialogVisible.value = true;
-    fallToleranceRangeId.value = rangeRes.data.fallToleranceRangeId
+    fallToleranceRangeId.value = rangeRes.data.maxFallRangeId
     createdAt.value = useDateString1(rangeRes.data.createdAt)
     // 画定申請ボタン無効化解除
     isProcessing.value = false;
-    console.log(`最大落下許容範囲申請ボタン無効化解除:${isProcessing.value}`);
+    console.log(`最大落下範囲申請ボタン無効化解除:${isProcessing.value}`);
     // ローディング終了
     isLoading.value = false;
-    console.log(`最大落下許容範囲申請ローディング終了:${isLoading.value}`);
+    console.log(`最大落下範囲申請ローディング終了:${isLoading.value}`);
   } else {
+    createStatus.value = STATUS.NG
+    isDialogVisible.value = true;
     console.error(`error: post fall tolerance range info {status: ${rangeRes.status}}.`);
     // 画定申請ボタン無効化解除
     isProcessing.value = false;
-    console.log(`最大落下許容範囲申請ボタン無効化解除:${isProcessing.value}`);
+    console.log(`最大落下範囲申請ボタン無効化解除:${isProcessing.value}`);
     // ローディング終了
     isLoading.value = false;
-    console.log(`最大落下許容範囲申請ローディング終了:${isLoading.value}`);
+    console.log(`最大落下範囲申請ローディング終了:${isLoading.value}`);
     return;
   }
 };
@@ -236,7 +253,7 @@ const showModal = async () => {
             <v-divider></v-divider>
             <v-stepper-item
             :complete="step > 2"
-            title="最大落下許容範囲申請"
+            title="最大落下範囲申請"
             value="3"
             ></v-stepper-item>
 
@@ -282,16 +299,16 @@ const showModal = async () => {
       <div v-if="isDialogVisible" class="overlay"></div>
       <!-- ダイアログ -->
       <dialog class="c-dialog" v-if="isDialogVisible">
-        <h2 class="e-dialogTitle">最大落下許容範囲申請 完了</h2>
-        <p>最大落下許容範囲申請しました</p>
-        <table class="c-labeledList">
+        <h2 class="e-dialogTitle" v-if="createStatus === STATUS.OK">最大落下範囲申請 完了</h2>
+        <p v-if="createStatus === STATUS.OK">最大落下範囲申請しました</p>
+        <table class="c-labeledList" v-if="createStatus === STATUS.OK">
           <tbody>
             <tr class="c-labeledListRow">
-              <th class="e-listLabel">最大落下許容範囲ID：</th>
+              <th class="e-listLabel">最大落下範囲ID：</th>
               <td class="e-listValue">{{ fallToleranceRangeId }}</td>
             </tr>
             <tr class="c-labeledListRow">
-              <th class="e-listLabel">最大落下許容範囲名：</th>
+              <th class="e-listLabel">最大落下範囲名：</th>
               <td class="e-listValue">{{ rangeName }}</td>
             </tr>
             <tr class="c-labeledListRow">
@@ -300,12 +317,14 @@ const showModal = async () => {
             </tr>
           </tbody>
         </table>
+        <h2 class="e-dialogTitle" v-if="createStatus === STATUS.NG">最大落下範囲申請 失敗</h2>
+        <p v-if="createStatus === STATUS.NG">最大落下範囲申請に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
         <ul class="e-buttonGroup">
-          <li>
-            <a href="/fallToleranceRange/newFallToleranceRange" class="e-button-noright">続けて最大落下許容範囲</a>
+          <li v-if="createStatus === STATUS.OK">
+            <a href="/fallToleranceRange/newFallToleranceRange" class="e-button-noright">続けて最大落下範囲</a>
           </li>
           <li>
-            <a href="/fallToleranceRange" class="e-button-noright">最大落下許容範囲一覧</a>
+            <a href="/fallToleranceRange" class="e-button-noright">最大落下範囲一覧</a>
           </li>
         </ul>
       </dialog>
