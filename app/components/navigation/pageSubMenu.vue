@@ -30,10 +30,7 @@ const toggleMenu = () => {
         <a class="e-pageSubMenuLink" href="#">航路閉塞</a>
       </li>
       <li class="c-pageSubMenuListItem">
-        <a class="e-pageSubMenuLink" href="/fallToleranceRange">最大落下許容範囲</a>
-      </li>
-      <li class="c-pageSubMenuListItem">
-        <a class="e-pageSubMenuLink" href="/stakeholders">関係者登録</a>
+        <a class="e-pageSubMenuLink" href="/fallToleranceRange">最大落下範囲</a>
       </li>
     </ul>
 
