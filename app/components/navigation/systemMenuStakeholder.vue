@@ -1,8 +1,6 @@
 <script setup>
 import SetNotice from '~/components/notice/setNoticeData.vue'
 
-const { signOut } = useAuth();
-
 const showOverlay = ref(false);
 function airwayClickEvent() {
   showOverlay.value = !showOverlay.value;
@@ -18,10 +16,17 @@ function loginClickEvent() {
   showLoginOverlay.value = !showLoginOverlay.value;
 }
 
-function logout() {
+async function logout() {
   console.log('logout() start.');
+  localStorage.removeItem("uasl:user:parentOperatorId");
+  localStorage.removeItem("uasl:user:operatorId");
+  localStorage.removeItem("uasl:user:operatorName");
+  localStorage.removeItem("roleList");
   localStorage.removeItem("virtualRole");
-  signOut({ callbackUrl: '/'});
+  await $fetch('/api/auth/logout', { 
+    method: 'GET',
+  });
+  navigateTo('/login', { replace: true })
 }
 
 //通知バッジ
@@ -64,6 +69,8 @@ onMounted(() => {
     console.log(notificationBadge.value);
   }, 10 * 1000) // 10秒
   }
+  // 全ユーザ属性をキャッシュ（運航事業者名変換用）
+  initUserAttrCache();
 });
 
 </script>
@@ -144,7 +151,7 @@ onMounted(() => {
       </div>
     </span>
   </button>
-  <button type="button" v-on:click="loginClickEvent" class="v-btn v-btn--icon v-theme--light v-btn--density-default v-btn--rounded v-btn--size-default v-btn--variant-text drn_menu__btn drn_menu__btn--user" aria-haspopup="menu" aria-expanded="false" aria-owns="menu5sub">
+  <button type="button" v-on:click="loginClickEvent" :title="cookie_role ? (cookie_role.operatorName || '') : ''" class="v-btn v-btn--icon v-theme--light v-btn--density-default v-btn--rounded v-btn--size-default v-btn--variant-text drn_menu__btn drn_menu__btn--user" aria-haspopup="menu" aria-expanded="false" aria-owns="menu5sub">
     <span class="v-btn__overlay"></span>
     <span class="v-btn__underlay"></span>
     <span class="v-btn__content" data-no-activator="">
