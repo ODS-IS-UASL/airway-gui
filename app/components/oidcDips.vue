@@ -24,7 +24,6 @@
 </template>
 
 <script setup>
-import axios from 'axios';
 import { ref, onMounted } from 'vue'
 
 const checkImg = ref('');
@@ -44,10 +43,11 @@ console.log("scope : " + scope);
 
 onMounted(async () => {
   try {
-    console.log("Verify Token start.");
-    const verifyTokenParams = {};
-    const response = await axios.post('/api/verifyDipsToken', verifyTokenParams, { withCredentials: true });
-    if (response.data.status === 200) {
+    const response = await $fetch('/api/misc/dipsTokenVerification', { 
+      method: 'POST',
+      body: {}
+    });
+    if (response.status === 200) {
       // ログイン済み
       console.log("Already login.");
       checkImg.value = true;
