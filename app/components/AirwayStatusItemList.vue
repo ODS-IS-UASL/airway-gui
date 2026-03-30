@@ -36,7 +36,7 @@
           >
             <img src="/assets/css/img/main/list-solid.svg" width="15" height="15">
           </v-btn>
-          <a href="/airwayStatus/map">
+          <a :href="selectedAirwayId ? `/airwayStatus/map?airwayId=${selectedAirwayId}` : '/airwayStatus/map'">
             <v-btn
               value="mapview"
               class="drn_toggle__btn"
@@ -121,52 +121,82 @@
     </div>
     
 
+    <!-- スピナー：reservationLoading 中 -->
+    <div v-if="reservationLoading" class="drn_spinner__area">
+      <v-progress-circular indeterminate color="primary" size="64" />
+      <p class="drn_spinner__text">運航状況データを読み込み中…</p>
+    </div>
+
     <!-- 予約一覧テーブル -->
-    <v-card-text class="drn_content">
+    <v-card-text v-if="!reservationLoading" class="drn_content">
       <div class="drn_content__body">
       <v-sheet class="drn_content__data">
       <div class="drn_list">
       <div class="drn_list__body">
         <!-- テーブル -->
-        <v-data-table
-          v-model:items-per-page="itemsPerPage"
-          :headers="headers"
-          :items="filteredRoutes"
-          item-value="id"
-          item-key="id"
-          fixed-header
-          fixed-footer
-          density="comfortable"
-          class="drn_list__table"
-          @update:selected-items="selectRoute"
-          @update:sort-key="updateSort"
-          :sort-key="sortKey"
-          :sort-order="sortOrder"
-          :items-per-page-options="[5, 10, 15, 20]"
-          @update:currentItems="onUpdateCurrentItems"
-        >
-          <template v-slot:body="{ items }">
-            <tr
-              v-for="(item, index) in items"
-              :key="item.id"
-              
-              :class="{'drn_table__selected': selectedReservationId === item.id }"
-              @click="selectRoute(item.id, item.airwayId, item.section)"
-            >
-              <td>
-                <div :class="{'change-color-airwaystatus': item.reservationStatus === '　運航中　', 'change-color-evaluation-airwaystatus': item.reservationStatus !== '　運航中　'}">
-                  {{ item.reservationStatus }}
-                </div>
-              </td>
-              <td>{{ item.reservationNumber }}</td>
-              <td>{{ item.dateRange }}</td>
-              <td>{{ item.route }}</td>
-              <td>{{ item.section }}</td>
-              <td>{{ item.reservationDay }}</td>
-              <td>{{ item.updateDay }}</td>
-            </tr>
-          </template>       
-        </v-data-table>
+        <div class="drn_native_table_wrap">
+          <table class="drn_native_table">
+            <thead>
+              <tr>
+                <th
+                  v-for="h in headers"
+                  :key="h.key"
+                  class="drn_native_th"
+                  @click="setSortKey(h.key)"
+                >
+                  {{ h.title }}
+                  <span v-if="sortKey === h.key">{{ sortAsc ? '▲' : '▼' }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="item in pagedRoutes"
+                :key="item.id"
+                :class="{ 'drn_table__selected': selectedReservationId === item.id }"
+                @click="selectRoute(item.id, item.airwayId)"
+              >
+                <td :class="{ 'drn_table__selected_first_td': selectedReservationId === item.id }" style="text-align:center">
+                  <div :class="{ 'change-color-airwaystatus': item.reservationStatus === '運航中', 'change-color-evaluation-airwaystatus': item.reservationStatus !== '運航中' }">
+                    {{ item.reservationStatus }}
+                  </div>
+                </td>
+                <td>{{ item.reservationNumber }}</td>
+                <td>{{ item.dateRange }}</td>
+                <td>{{ item.route }}</td>
+                <td>{{ item.section }}</td>
+                <td>{{ item.reservationDay }}</td>
+                <td>{{ item.updateDay }}</td>
+              </tr>
+              <tr v-if="pagedRoutes.length === 0">
+                <td :colspan="headers.length" style="text-align:center; padding: 16px;">データがありません</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- ページネーション -->
+        <div class="drn_pagination">
+          <div class="drn_pagination__per_page">
+            <span>表示件数:</span>
+            <select v-model.number="itemsPerPage" @change="page = 1">
+              <option v-for="n in [5, 10, 20, 50]" :key="n" :value="n">{{ n }}</option>
+            </select>
+          </div>
+          <div class="drn_pagination__info">{{ paginationInfo }}</div>
+          <div class="drn_pagination__controls">
+            <button class="drn_pager_btn" :disabled="page === 1" @click="page = 1">«</button>
+            <button class="drn_pager_btn" :disabled="page === 1" @click="page--">‹</button>
+            <button
+              v-for="n in pageNumbers"
+              :key="n"
+              class="drn_pager_btn"
+              :class="{ 'drn_pager_btn--active': page === n }"
+              @click="page = n"
+            >{{ n }}</button>
+            <button class="drn_pager_btn" :disabled="page === totalPages" @click="page++">›</button>
+            <button class="drn_pager_btn" :disabled="page === totalPages" @click="page = totalPages">»</button>
+          </div>
+        </div>
       </div>
       </div>
       </v-sheet>
@@ -177,7 +207,6 @@
 </template>
 
 <script>
-import { ref } from "vue";
 
 export default {
   props: {
@@ -187,7 +216,20 @@ export default {
     },
     airwayData: {
       type: Object,
-      required: true
+      required: false,
+      default: () => ({ airway: { airways: [] } })
+    },
+    airwayDataLoading: {
+      type: Boolean,
+      default: true
+    },
+    reservationLoading: {
+      type: Boolean,
+      default: true
+    },
+    ownDataReady: {
+      type: Boolean,
+      default: false
     },
   },
   data() {
@@ -202,9 +244,10 @@ export default {
         { title: '通知・更新', align: 'start', key: 'updateDay', sortable: true },
       ],
       selectedReservationId: null,
+      selectedAirwayId: null,
       itemsPerPage: 20,
-      sortKey: '', // ソートキー
-      sortOrder: 1, // 1: 昇順, -1: 降順
+      sortKey: '',
+      sortAsc: true,
       page: 1,
       showPopup: false,
       purposes: ["物資運搬","送電線点検","河川監視","山岳監視","航空撮影","その他"],
@@ -222,26 +265,82 @@ export default {
       relationship_airwayIds: [],
       reservation_airwayIds: [],
       currentItems: [],
+      viewType: 'listview',
     };
   },
   computed: {
-    async routes() {
+    sortedRoutes() {
+      if (!this.sortKey) return this.filteredRoutes
+      const key = this.sortKey
+      const asc = this.sortAsc
+      return [...this.filteredRoutes].sort((a, b) => {
+        const av = a[key] ?? ''
+        const bv = b[key] ?? ''
+        if (av < bv) return asc ? -1 : 1
+        if (av > bv) return asc ? 1 : -1
+        return 0
+      })
+    },
+    totalPages() {
+      return Math.max(1, Math.ceil(this.sortedRoutes.length / this.itemsPerPage))
+    },
+    pagedRoutes() {
+      const start = (this.page - 1) * this.itemsPerPage
+      return this.sortedRoutes.slice(start, start + this.itemsPerPage)
+    },
+    paginationInfo() {
+      const total = this.sortedRoutes.length
+      if (total === 0) return '0 件'
+      const start = (this.page - 1) * this.itemsPerPage + 1
+      const end = Math.min(this.page * this.itemsPerPage, total)
+      return `${start} - ${end} / ${total} 件`
+    },
+    pageNumbers() {
+      const total = this.totalPages
+      const cur = this.page
+      const delta = 2
+      const pages = []
+      for (let i = Math.max(1, cur - delta); i <= Math.min(total, cur + delta); i++) {
+        pages.push(i)
+      }
+      return pages
+    },
+  },
+  watch: {
+    async airwayData(newVal) {
+      if (!newVal?.airway?.airways) return;
+      this.filteredRoutes = await this.buildRoutes();
+    },
+    async airwayDataLoading(newVal) {
+      if (!newVal) {
+        this.filteredRoutes = await this.buildRoutes();
+      }
+    },
+    async reservationData(newVal) {
+      if (!newVal?.result?.length) return;
+      this.filteredRoutes = await this.buildRoutes();
+    },
+  },
+  methods: {
+    async buildRoutes() {
+      if (!this.reservationData?.result?.length) return [];
       const reservationList = [];
 
       // 最大許容落下範囲情報取得
-      const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-      const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-      const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
-      if (rangeRes.status != 200) {
+      const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+        method: 'GET',
+        query: { businessNumber: useRuntimeConfig().public.businessNumber }
+      });
+      if (rangeRes.status !== 200) {
         console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
         this.falltrangeData = null;
         return;
       }
-      this.falltrangeData = rangeRes.data;
+      this.falltrangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
 
       // 地域一覧を取得
       const areajsonUrl = `/api/getAreaJsonData`;
-      const areadata = await axios_get(areajsonUrl);
+      const areadata = await $fetch(areajsonUrl);
       if (areadata.data != undefined) {
         // オプション検索で使用する地域一覧を作成
         this.areaitems = [];
@@ -255,6 +354,7 @@ export default {
         return;
       }
 
+      const LOADING = 'データ取得中';
       let id = 0;
       if(!("result" in  this.reservationData)){
         return reservationList;
@@ -265,8 +365,11 @@ export default {
           let isDateCheck = false;
           const now_date = new Date();
           const Departure_date = new Date(useDateString1(reservation['airwaySections'][0]['startAt']));
-          const Arrival_date = new Date(useDateString1(reservation['airwaySections'][0]['endAt']));
-          isDateCheck = (Departure_date <= now_date && Arrival_date >= now_date);
+          const lastAirwaySection = reservation['airwaySections'][reservation['airwaySections'].length - 1];
+          const Arrival_date = new Date(useDateString1(lastAirwaySection['endAt']));
+          const rawReservationStatus = reservation['status'];
+          // RESERVED かつ現在日時が予約開始〜到着（最終区画）の範囲内であれば表示
+          isDateCheck = rawReservationStatus === 'RESERVED' && Departure_date <= now_date && Arrival_date >= now_date;
           if (isDateCheck == false) {
             // 未来のデータも表示から除外
             return;
@@ -275,30 +378,76 @@ export default {
           for(let i=0; i<reservation['airwaySections'].length; i++){
             airwaySections.push(reservation['airwaySections'][i]['airwaySectionId']);
           }
-          let airwayId = useAirwayGetAirwayIdFromSectionId(this.airwayData, reservation['airwaySections'][0]['airwaySectionId']) // 予約に含まれる航路区画IDをもとに航路IDを特定
-          if (this.role == 3 && this.reservation_airwayIds.includes(airwayId) == false) {
-            // 関係者でログインしている場合、自身に関係する航路IDでなければ表示しない
-            return;
+          let airwayIds = []
+          airwaySections.forEach((airwaySectionId) => {
+            airwayIds.push(useAirwayGetAirwayIdFromSectionId(this.airwayData, airwaySectionId)) // 予約に含まれる航路区画IDをもとに航路IDを特定
+          });
+          let route = []
+          airwayIds.forEach((airwayId) => {
+            const rName = useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId);
+            route.push(this.airwayDataLoading && rName === 'Not found.' ? LOADING : rName)
+          })
+          // 指定航路区画の航路点情報取得
+          const getAirwayJunctions = (airwaySectionId) => {
+            const [junctions] =
+              this.airwayData.airway.airways
+                    .filter(airway => airway.airwaySections.some(section => section.airwaySectionId == airwaySectionId))
+                    .map(airway => (
+                        airway.airwayJunctions
+                          .filter(junction => airway.airwaySections.find(section => section.airwaySectionId == airwaySectionId)
+                          .airwayJunctionIds.includes(junction.airwayJunctionId)) )
+                    );
+            return junctions;
+          };
+          let section = "Not found"
+          const sectionCount = reservation?.airwaySections?.length ?? 0;
+          if (sectionCount == 1) {
+            const junctions = getAirwayJunctions(reservation.airwaySections[0].airwaySectionId);
+            section = junctions ? junctions.map(j => j.name).join(' ~ ') : "Not found";
+          } else if (sectionCount > 1) {
+            const getJunctionName = (isStart) => {
+              const firstIndex = isStart ? 0 : reservation.airwaySections.length - 1;
+              const secondIndex = firstIndex + (isStart ? 1 : -1);
+              const firstJunctions = getAirwayJunctions(reservation.airwaySections[firstIndex].airwaySectionId);
+              const secondJunctions = getAirwayJunctions(reservation.airwaySections[secondIndex].airwaySectionId);
+              if (!firstJunctions || !secondJunctions) return null;
+              const uniqueJunctions = firstJunctions.filter(j =>
+                !secondJunctions.map(m => m?.airwayJunctionId).includes(j.airwayJunctionId)
+              );
+              if (uniqueJunctions.length == 1) {
+                return uniqueJunctions[0]?.name;
+              } else {
+                return firstJunctions[+!isStart]?.name;
+              }
+            };
+            section = (getJunctionName(true) ?? '') + ' ~ ' + (getJunctionName(false) ?? '');
           }
-          const rawReservationStatus = reservation['status'];
+          // airwayData 未取得・ロード中の場合は "データ取得中" を表示
+          const isSectionEmpty = section === 'Not found' || section.includes('Not found') || !section.replace(/[\s~]/g, '');
+          if (this.airwayDataLoading && isSectionEmpty) {
+            section = LOADING;
+          }
           let element = {
             id: reservation['airwayReservationId'],
-            airwayId: airwayId,
-            reservationStatus: this.convertReservationStatus(rawReservationStatus),
+            airwayId: airwayIds[0],
+            // 適合性確認改修 start
+            evaluationResults: reservation['evaluationResults'],
+            reservationStatus: reservation['evaluationResults'] ? this.convertReservationStatus(rawReservationStatus) : reservation['evaluationStatus'],
+            // 適合性確認改修 end
             rawReservationStatus: rawReservationStatus,
-            dateRange: useDateString1(reservation['airwaySections'][0]['startAt']) + ' ~ ' + useDateString1(reservation['airwaySections'][0]['endAt']),
+            dateRange: useDateString1(reservation['airwaySections'][0]['startAt']) + ' ~ ' + useDateString1(lastAirwaySection['endAt']),
             reservationNumber: reservation['airwayReservationId'],
-            route: useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId),
-            section: useAirwayGetCorridorPointRangeFromSectionIdList(this.airwayData, reservation['airwaySections']),
+            route: [...new Set(route.map(s => s.trim()))].join(", "),
+            section: section,
             Departure: useDateString1(reservation['airwaySections'][0]['startAt']),
-            Arrival: useDateString1(reservation['airwaySections'][0]['endAt']),
+            Arrival: useDateString1(lastAirwaySection['endAt']),
             rawStartDay: reservation['airwaySections'][0]['startAt'],
-            rawEndDay: reservation['airwaySections'][0]['endAt'],
+            rawEndDay: lastAirwaySection['endAt'],
             reservationDay: useDateString2(reservation['reservedAt']),
             updateDay: useDateString2(reservation['updatedAt']),
-            name: useAirwayGetAirwayNameFromAirwayId(this.airwayData, airwayId),
-            area: getareaName(this.falltrangeData, airwayId),
-            purpose: useAirwayGetPurposeFromAirwayId(this.airwayData, airwayId),
+            name: [...new Set(route.map(s => s.trim()))].join(", "),
+            area: getareaName(this.falltrangeData, airwayIds[0]),
+            purpose: useAirwayGetPurposeFromAirwayId(this.airwayData, airwayIds[0]),
             companyName: getcompanyName(this.operatorData, reservation['operatorId']),
             airwaySectionId: airwaySections
           };
@@ -310,28 +459,10 @@ export default {
       }
       return reservationList;
     },
-  },
-  setup() {
-    const viewType = ref('listview');
-
-    const setList = () => {
-      viewType.value = 'listview';
-    };
-
-    const setMap = () => {
-      viewType.value = 'mapview'
-    };
-
-    return {
-      setList,
-      setMap,
-    };
-  },
-  methods: {
     convertReservationStatus(status) {
       switch(status) {
         case 'RESERVED':
-          return '予約済み';
+          return '運航中';
         case 'CANCELED':
           return 'キャンセル済み';
         case 'RESCINDED':
@@ -363,44 +494,46 @@ export default {
 
       // filteredRoutes の各行について、reservationId が一致する最新 receiveTime のデータがあれば上書き
       this.filteredRoutes.forEach(route => {
+        // 適合性確認改修 start
         const matched = newestDataMap[route.id];
         if (matched) {
+          route.rawReservationStatus = matched.status;
+          route.evaluationResults = matched.evaluationResults;
           // reservationStatus を notifyType に更新
           if(matched.evaluationResults === true){
-              route.reservationStatus = '　運航中　'
+            route.reservationStatus = '運航中'
           }else{
-            let notifyType = '';
-              switch (matched.type) {
-                case "weather":
-                  notifyType = "気象異常";
-                  break;
-                case "event":
-                  notifyType = "規制イベント";
-                  break;
-                case "railway":
-                  notifyType = "鉄道異常";
-                  break;
-                case "intrusion":
-                  notifyType = "人立ち入り";
-                  break;
-                default:
-                  notifyType = matched.type;
-                  break;
-              }
-            route.reservationStatus = notifyType;
+            route.reservationStatus = matched.type;
           }
           
         }
+        // 適合性確認改修 end
       });
       //反映し終わったら空にしておく
       localStorage.setItem("airwayEvaluationDB",[]);
     },
-    selectRoute(id) {
-      this.selectedRow = this.selectedRow === id ? null : id;
+    selectRoute(id, airwayId) {
+      if (this.selectedReservationId === id) {
+        this.selectedReservationId = null;
+        this.selectedAirwayId = null;
+      } else {
+        this.selectedReservationId = id;
+        this.selectedAirwayId = airwayId ?? null;
+      }
     },
-    async updateSort({ sortBy, sortDesc }) {
-      this.sortKey = sortBy; // ソートキーを更新
-      this.sortOrder = sortDesc ? 'desc' : 'asc'; // ソート順を更新
+    setSortKey(key) {
+      if (this.sortKey === key) {
+        this.sortAsc = !this.sortAsc;
+      } else {
+        this.sortKey = key;
+        this.sortAsc = true;
+      }
+    },
+    setList() {
+      this.viewType = 'listview';
+    },
+    setMap() {
+      this.viewType = 'mapview';
     },
     togglePopup() {
         this.showPopup = !this.showPopup;
@@ -414,7 +547,7 @@ export default {
       if(this.endDate !== ''){
         end = new Date(useDateStringLocaltoUTC(this.endDate));
       }
-      const routes_filter = await this.routes;
+      const routes_filter = await this.buildRoutes();
       this.filteredRoutes = routes_filter.filter(item => {
         const itemDeparture = new Date(item.Departure);
         const itemArrival = new Date(item.Arrival);
@@ -451,106 +584,13 @@ export default {
       this.currentItems = items;
       console.log(this.currentItems);
 
-      const headers = {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      };
-
-      const promises = [];
       for (let i = 0; i < this.currentItems.length; i++) {
-        // キャンセルもしくは撤回済みの予約については適合性確認APIを実行しない
+        // キャンセルもしくは撤回済みの予約については中止表示
         if (this.currentItems[i].raw.rawReservationStatus == 'CANCELED' || this.currentItems[i].raw.rawReservationStatus == 'RESCINDED') {
           this.currentItems[i].raw.reservationStatus = '　中止　'
           continue;
         }
-
-        // 予約と紐づく機体取得
-        const url = '/api/getAircraftInfoFrom?id=' + this.currentItems[i].raw.id;
-        const routeRequest = axios_get(url).then(async (response) => {
-          if (response.status !== 200 || response.data.aircraftInfo === null) {
-            this.currentItems[i].raw.reservationStatus = "取得失敗";
-            return;
-          }
-
-          // 適合性確認
-          const safetyApiBaseUrl = useRuntimeConfig().public.safetyApiBaseUrl;
-          const assessmentURL = `${safetyApiBaseUrl}/conformity-assessment`;
-          for (let airwaySectionIdIndex=0; airwaySectionIdIndex<this.currentItems[i].raw.airwaySectionId.length; airwaySectionIdIndex++){
-            const body = {
-              "airwaySectionId": this.currentItems[i].raw.airwaySectionId[airwaySectionIdIndex],
-              "startAt": this.currentItems[i].raw.rawStartDay,
-              "endAt": this.currentItems[i].raw.rawEndDay,
-              "aircraftInfo": {
-                "maker": response.data.aircraftInfo.maker,
-                "modelNumber": response.data.aircraftInfo.modelNumber,
-                "name": response.data.aircraftInfo.name,
-                "type": response.data.aircraftInfo.type,
-                "length": response.data.aircraftInfo.length,
-              }
-            };
-
-            const assessmentRes = await axios_post(assessmentURL, body, headers);
-            if (assessmentRes.status !== 200) {
-              this.currentItems[i].raw.reservationStatus = "取得失敗";
-              return;
-            }
-
-            if (assessmentRes.data.evaluationResults === 'false') {
-              let notifyType = "";
-              switch (assessmentRes.data.type) {
-                case "weather":
-                  notifyType = "気象異常";
-                  break;
-                case "event":
-                  notifyType = "規制イベント";
-                  break;
-                case "railway":
-                  notifyType = "鉄道異常";
-                  break;
-                case "intrusion":
-                  notifyType = "人立ち入り";
-                  break;
-                default:
-                  notifyType = "取得失敗";
-                  break;
-              }
-              this.currentItems[i].raw.reservationStatus = notifyType;
-              return
-            }
-          }
-
-          // 適合性確認OK 運行状況ステータス確認
-          const locationUrl = `${safetyApiBaseUrl}/get-current-location/` + this.currentItems[i].raw.id;
-          const locationRes = await axios_get(locationUrl, {}, {});
-          if (locationRes.status != 200) {
-            this.currentItems[i].raw.reservationStatus = "取得失敗";
-            console.error(`error: get current location info {status: ${locationRes.status}}.`);
-            return;
-          }
-          
-          let notifyType = "";
-          switch (locationRes.data.operationalStatus) {
-            case "RouteApproach":
-
-            case "NormalOperation":
-              notifyType = "　運航中　";
-              break;
-            case "RouteDeviation":
-              notifyType = "航路逸脱";
-              break;
-            default:
-              console.log(locationRes.data.operationalStatus)
-              break;
-          }
-          this.currentItems[i].raw.reservationStatus = notifyType;
-        });
-
-        promises.push(routeRequest);
       }
-
-      // 全ての非同期リクエストが完了するのを待つ
-      await Promise.all(promises);
     }
   },
   async created() {
@@ -579,10 +619,11 @@ export default {
     }
 
     // 事業者一覧取得
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const operatorUrl = `${miscApiBaseUrl}/operator`;
-    const operatorRes = await axios_get(operatorUrl);
-    if (operatorRes.status === 200 && operatorRes.data != undefined) {
+    // const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
+    // const operatorUrl = `${miscApiBaseUrl}/operator`;
+    // const operatorRes = await axios_get(operatorUrl);
+    // if (operatorRes.status === 200 && operatorRes.data != undefined) {
+    if (false) {
       this.operatorData = {};
       this.operatorData = operatorRes.data;
       // オプション検索で使用する事業所・会社名一覧を作成
@@ -594,8 +635,8 @@ export default {
         }
       }
     } else {
-      console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-      return;
+      console.error(`error: get operator info.`);
+      // operator API 失敗でも処理を継続（companyNameItems は空のまま）
     }
 
     // ユーザが関係者である場合、関係のあるopreratorIdでフィルタリング
@@ -623,7 +664,7 @@ export default {
       }
       console.log(`reservation_airwayIds: ${this.reservation_airwayIds}`);
     }
-    this.filteredRoutes = await this.routes;
+    this.filteredRoutes = await this.buildRoutes();
   },
   mounted() {
     // 10秒ごとにローカルストレージをチェックする
@@ -641,6 +682,107 @@ export default {
 </script>
 
 <style>
+
+/* コンポーネント全高フィル（b-pageContentHasNavigation--fill 使用時） */
+.b-pageContentHasNavigation--fill .drn_main__app {
+  height: 100%;
+  min-height: 0;
+}
+.drn_main__app .drn_content__data {
+  overflow: hidden;
+}
+.drn_main__app .drn_list__body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ネイティブテーブル */
+.drn_native_table_wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.drn_native_table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.drn_native_th {
+  text-align: left;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 2px solid #ddd;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.drn_native_th:hover {
+  background: #f0f0f0;
+}
+.drn_native_table tbody tr td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.drn_native_table tbody tr:hover {
+  background: #fafafa;
+}
+/* ページネーション */
+.drn_pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 6px 8px;
+  margin-top: 0;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: #ffffff;
+  z-index: 1;
+  border-top: 1px solid #e0e0e0;
+}
+.drn_pagination__per_page {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.drn_pagination__per_page select {
+  border: 1px solid #999;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.drn_pagination__info {
+  font-size: 13px;
+  color: #555;
+}
+.drn_pagination__controls {
+  display: flex;
+  gap: 4px;
+}
+.drn_pager_btn {
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  padding: 0 6px;
+}
+.drn_pager_btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.drn_pager_btn--active {
+  background: #333;
+  color: #fff;
+  border-color: #333;
+}
 
 /* モーダルウィンドウのスタイル */
 .popup {
@@ -761,6 +903,10 @@ color: #000; /* ヘッダー文字色を黒に設定 */
 vertical-align: middle; 
 }
 
+.v-table__wrapper table tbody tr td {
+  vertical-align: middle;
+}
+
 .v-table--density-default {
   --v-table-header-height: 35px!important;
   --v-table-row-height: 40px!important;
@@ -812,16 +958,35 @@ background-size: 100%;
 }
 
 .change-color-airwaystatus {
-  color: #FFFFFF;
-  background: #0F1ED2;
+  color: rgb(44, 105, 255);
+  background: rgb(211, 225, 254);
   display: inline-block;
-  padding: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .change-color-evaluation-airwaystatus {
-  color: #FFFFFF;
-  background: #E6248F;
+  color: rgb(216, 24, 129);
+  background: rgb(251, 223, 239);
   display: inline-block;
-  padding: 5px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* スピナー */
+.drn_spinner__area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  gap: 16px;
+}
+.drn_spinner__text {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
 }
 </style>
