@@ -20,14 +20,10 @@ const isDialogVisible = ref(false)
 const isJunctionSetting = ref(true)
 
 const purpose = ref('')
-const type = ref('')
 const routeName = ref('')
 const airwayId = ref('')
 const fallToleranceRange = ref('')
 const fallToleranceRangeId = ref('')
-const drone = ref('')
-const stakeholders = ref([])
-const stakeholdersSelected = ref([])
 const corridorData = ref('')
 const postJsonData = ref('')
 const cookie_role = ref(null)
@@ -35,16 +31,27 @@ const role = ref(null)
 const junctionSettingKey = ref(0)
 const junctionNameSettingKey = ref(0)
 const confirmationKey = ref(0)
-const createOk = ref(true)
 const createdAt = ref('')
+const STATUS = {
+  OK: 'OK',
+  NG: 'NG',
+  CONFLICT: 'CONFLICT'
+};
+const createStatus = ref(STATUS.OK)
+const conflictAirwaySection = ref('')
+const conflictErrorCode = ref('')      // E0001 / E0002 / E0003
+const errorSectionIndex = ref(-1)      // マップのエラー強調用
+const contactCoordinates = ref(null)   // E0002の接触座標
+const aircrafts = ref([])       // 複数機体（JSON文字列）の配列
+const selectedModels = ref([])  // 表示用のモデル名配列
 
 const rangeData = {
   purpose,
-  type,
   routeName,
   fallToleranceRange,
   fallToleranceRangeId,
-  drone,
+  aircrafts,
+  selectedModels,
   corridorData,
 };
 
@@ -78,13 +85,11 @@ if (process.client) {
 
 const handleBasicInfomationUpdate = (basicInfomation) => {
   purpose.value = basicInfomation.purpose
-  type.value = basicInfomation.type
   routeName.value = basicInfomation.routeName
   fallToleranceRange.value = basicInfomation.fallToleranceRange
   fallToleranceRangeId.value = basicInfomation.fallToleranceRangeId
-  drone.value = basicInfomation.drone
-  stakeholders.value = basicInfomation.stakeholders
-  stakeholdersSelected.value = basicInfomation.stakeholdersSelected
+  aircrafts.value = basicInfomation.aircrafts || []
+  selectedModels.value = basicInfomation.selectedModels || []
   console.log("rangeData",rangeData);
 }
 
@@ -110,27 +115,21 @@ const handlePostJsonDataUpdate = (jsonData) => {
   console.log("postJsonData",postJsonData);
 }
 
-const handleStakeholdersSelectedUpdate = (addStakeholdersSelected) => {
-  stakeholdersSelected.value = addStakeholdersSelected
-  console.log("stakeholdersSelected",stakeholdersSelected);
-}
-
 const navigate = (next) => {
   const stepNo = ref(next ? step.value + 1 : step.value - 1)
   const errorMessage = ref('')
   // 条件チェック関数
   const checkConditions = (step) => {
-    const isInvalid = (value) => value === '' || value === '------------------';
+    const isInvalid = (value) => value === '' || value === '------------------' || !value;
     switch (step) {
       case 1:
         // ステップ1の条件チェック
+        const hasAircrafts = Array.isArray(aircrafts.value) && aircrafts.value.length > 0
         if (!(purpose.value) ||
-            isInvalid(type.value[0]) ||
-            (type.value.length == 0) ||
             isInvalid(routeName.value) ||
             isInvalid(fallToleranceRange.value) ||
             isInvalid(fallToleranceRangeId.value) ||
-            !(drone.value)) {
+            !hasAircrafts) {
           errorMessage.value = 'すべての項目を入力してください。'
           return false
         }
@@ -147,7 +146,7 @@ const navigate = (next) => {
         let data = corridorData.value.airwayJunctions.find(junction => 
           !junction['airwayJunctionName']
         );
-        if (data) {
+        if (data || !routeName.value) {
           errorMessage.value = 'すべての項目を入力してください。'
           return false
         }
@@ -191,6 +190,11 @@ const navigate = (next) => {
       nextButton.value = '画定内容確認'
       stepTitle.value = '新規航路画定'
       if (next) junctionNameSettingKey.value = junctionNameSettingKey.value + 1
+      else {
+        // 画定申請画面から戻る時にエラー状態をリセット
+        errorSectionIndex.value = -1
+        contactCoordinates.value = null
+      }
       break
     case 3:
       nextButton.value = '画定申請'
@@ -208,6 +212,11 @@ const navigate = (next) => {
 
 const showModal = async () => {
 
+  // 前回のエラー状態をリセット
+  createStatus.value = STATUS.OK;
+  conflictErrorCode.value = '';
+  conflictAirwaySection.value = '';
+
   // 画定申請ボタン無効化
   isProcessing.value = true;
   console.log(`画定申請ボタン無効化:${isProcessing.value}`);
@@ -216,18 +225,32 @@ const showModal = async () => {
   console.log(`画定申請ローディング開始:${isLoading.value}`);
 
   console.log('postJsonData:', postJsonData.value);
-  console.log('Selected Stakeholders:', stakeholdersSelected.value);
 
-  const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-  const airwayUrl = `${airwayApiBaseUrl}/airway`;
-  const airwayRes = await axios_post(airwayUrl, postJsonData.value, {});
+  const airwayRes = await $fetch('/api/airway/uasl', { 
+    method: 'POST',
+    body: postJsonData.value
+  });
   console.log(airwayRes);
   if (airwayRes.status == 201) {
     isDialogVisible.value = true;
     console.log('airwayRes:', airwayRes);
   } else {
+    isDialogVisible.value = true;
     console.error(`error: post airway info {status: ${airwayRes.status}}.`);
-    createOk.value = false;
+    if (airwayRes.status == 422) {
+      createStatus.value = STATUS.CONFLICT
+      const errorCode = airwayRes.data?.details?.error?.code ?? ''
+      conflictErrorCode.value = errorCode
+      const idx = airwayRes.data?.details?.uaslSectionIndex ?? 0
+      errorSectionIndex.value = idx
+      contactCoordinates.value = airwayRes.data?.details?.contactCoordinates ?? null
+      const uaslSectionNames = postJsonData.value.uaslParts
+        .map(part => part.uaslSection?.name)
+        .filter(name => name !== undefined);
+      conflictAirwaySection.value = uaslSectionNames[idx] ?? `区画 ${idx}`;
+    } else {
+      createStatus.value = STATUS.NG
+    }
     // 画定申請ボタン無効化解除
     isProcessing.value = false;
     console.log(`画定申請ボタン無効化解除:${isProcessing.value}`);
@@ -238,43 +261,9 @@ const showModal = async () => {
   }
   createdAt.value = getCurrentDate(); // 航路画定時の生成日時を記録
 
-  airwayId.value = airwayRes.data.airwayId;
+  airwayId.value = airwayRes.data.uaslId;
   console.log('airwayId:', airwayId.value);
 
-  // 関係者が設定されていたら、関係者登録を行う
-  if (stakeholdersSelected.value.length != 0) {
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const airwayTenantLinkUrl = `${miscApiBaseUrl}/airwayTenantLink`;
-    const airwayTenantLinkHeaders = {
-      headers: {
-        'accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    };
-
-    const airwayTenantLinkParams = { 
-      "airwayId": airwayId.value,
-      "relatedPartiesIdList": stakeholdersSelected.value,
-    };
-    try {
-      const airwayTenantLinkRes = await axios_post(airwayTenantLinkUrl, airwayTenantLinkParams, airwayTenantLinkHeaders );
-      console.log(airwayTenantLinkRes);
-      if (airwayTenantLinkRes.status != 200) {
-        console.error(`error: post airwayTenantLink info {status: ${airwayTenantLinkRes.status}}.`);
-        createOk.value = false;
-      }
-    } catch (error) {
-      console.error(`Network request failed: ${error}`);
-      createOk.value = false;
-      // 画定申請ボタン無効化解除
-      isProcessing.value = false;
-      console.log(`画定申請ボタン無効化解除:${isProcessing.value}`);
-      // ローディング終了
-      isLoading.value = false;
-      console.log(`画定申請ローディング終了:${isLoading.value}`);
-      return;
-    }
-  }
   // 画定申請ボタン無効化解除
   isProcessing.value = false;
   console.log(`画定申請ボタン無効化解除:${isProcessing.value}`);
@@ -290,6 +279,10 @@ function getCurrentDate() {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}/${month}/${day}`;
+}
+
+const closeDialog = () => {
+  isDialogVisible.value = false;
 }
 
 </script>
@@ -356,7 +349,7 @@ function getCurrentDate() {
             value="2"
             >
               <!-- 詳細情報 -->
-              <junctionSetting :stepNo="2" :key="junctionSettingKey" :rangeData="rangeData" :drone="drone" @update:corridorData="handleCorridorDataUpdate" @update:junctionSetting="handlerIsJunctionSetting"/>
+              <junctionSetting :stepNo="2" :key="junctionSettingKey" :rangeData="rangeData" @update:corridorData="handleCorridorDataUpdate" @update:junctionSetting="handlerIsJunctionSetting"/>
             </v-stepper-window-item>
 
             <v-stepper-window-item
@@ -372,9 +365,8 @@ function getCurrentDate() {
                 :stepNo="4" 
                 :key="confirmationKey"
                 :rangeData="rangeData"
-                :stakeholders="stakeholders" 
-                :stakeholdersSelected="stakeholdersSelected" 
-                @update:addStakeholdersSelected="handleStakeholdersSelectedUpdate"
+                :errorSectionIndex="errorSectionIndex"
+                :contactCoordinates="contactCoordinates"
                 @update:postJsonData="handlePostJsonDataUpdate"/>
             </v-stepper-window-item>
           </v-stepper-window>
@@ -399,9 +391,9 @@ function getCurrentDate() {
       <div v-if="isDialogVisible" class="overlay"></div>
       <!-- ダイアログ -->
       <dialog class="c-dialog" v-if="isDialogVisible">
-        <h2 class="e-dialogTitle" v-if="createOk">航路画定申請 完了</h2>
-        <p v-if="createOk">航路画定申請しました</p>
-        <table class="c-labeledList" v-if="createOk">
+        <h2 class="e-dialogTitle" v-if="createStatus === STATUS.OK">航路画定申請 完了</h2>
+        <p v-if="createStatus === STATUS.OK">航路画定申請しました</p>
+        <table class="c-labeledList" v-if="createStatus === STATUS.OK">
           <tbody>
             <tr class="c-labeledListRow">
               <th class="e-listLabel">航路ID：</th>
@@ -417,14 +409,21 @@ function getCurrentDate() {
             </tr>
           </tbody>
         </table>
-        <h2 class="e-dialogTitle" v-if="!createOk">航路画定申請 失敗</h2>
-        <p v-if="!createOk">航路画定申請に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
+        <h2 class="e-dialogTitle" v-if="createStatus === STATUS.NG || createStatus === STATUS.CONFLICT">航路画定申請 失敗</h2>
+        <p v-if="createStatus === STATUS.NG">航路画定申請に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
+        <p v-if="createStatus === STATUS.CONFLICT && conflictErrorCode === 'E0001'">航路区画 {{ conflictAirwaySection }} で他航路と干渉しています。</p>
+        <p v-if="createStatus === STATUS.CONFLICT && conflictErrorCode === 'E0002'">航路区画 {{ conflictAirwaySection }} が地物・障害物と干渉しています。</p>
+        <p v-if="createStatus === STATUS.CONFLICT && conflictErrorCode === 'E0003'">航路区画 {{ conflictAirwaySection }} が最大落下範囲外です。</p>
+        <p v-if="createStatus === STATUS.CONFLICT && !['E0001','E0002','E0003'].includes(conflictErrorCode)">航路画定申請に失敗しました。<br>しばらく時間をあけて再度実行をお願いします。</p>
         <ul class="e-buttonGroup">
-          <li v-if="createOk">
+          <li v-if="createStatus === STATUS.OK">
             <a href="/airway/newAirway" class="e-button-noright">続けて航路画定</a>
           </li>
-          <li>
+          <li v-if="createStatus !== STATUS.CONFLICT">
             <a href="/airway" class="e-button-noright">航路画定一覧</a>
+          </li>
+          <li v-if="createStatus === STATUS.CONFLICT">
+            <button class="e-button-noright" @click="closeDialog">OK</button>
           </li>
         </ul>
       </dialog>
