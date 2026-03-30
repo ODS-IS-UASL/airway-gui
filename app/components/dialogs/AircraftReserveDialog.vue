@@ -101,10 +101,13 @@ const loadingData = async () => {
   // spinerOn
   await loadOn()
   let result: EventInfo[] = []
-  const apiResult = await useRestApiReserveAircraftGetList(params)
+  const apiResult = await $fetch('/api/drone/aircraft/reserve/list', { 
+    method: 'GET',
+    query: params
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    const { data: dataList } = await apiResult.json()
+    const { data: dataList } = apiResult.data
     result = dataList.map((data: any) => {
       return {
         id: data.aircraftReservationId,
@@ -118,9 +121,9 @@ const loadingData = async () => {
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
+    const responseBody = apiResult.data
     getListFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorDetail.value = `機体予約情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
