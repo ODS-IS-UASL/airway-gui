@@ -105,15 +105,17 @@
   })
 
   async function drawFallToleranceRange(isMove) {
-    // 最大落下許容範囲表示
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-    const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+    // 最大落下範囲表示
+    const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+      method: 'GET',
+      query: { businessNumber: useRuntimeConfig().public.businessNumber }
+    });
     console.log(rangeRes);
 
-    // 全ての最大落下許容範囲を表示
+    // 全ての最大落下範囲を表示
     if (rangeRes.status === 200 && rangeRes.data) {
-      rangeRes.data['fallToleranceRanges'].forEach((range) => {
+      const rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
+      rangeData['fallToleranceRanges'].forEach((range) => {
         let markerList = [];
         if (range['geometry']['coordinates'].length) {
           range['geometry']['coordinates'][0].forEach((coord) => {
