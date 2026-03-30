@@ -1,56 +1,4 @@
 <template>
-  <!-- モーダルウィンドウ ここから -->
-  <div v-if="showStakeholdersPopup" class="popup">
-    <div class="item-center">
-      <v-data-table
-        v-model:items-per-page="itemsPerPage"
-        :items="stakeholders"
-        item-value="operatorId"
-        item-key="operatorId"
-        class="elevation-1"
-        hide-default-header
-        hide-default-footer
-        style="max-height: 400px; overflow-y: auto;"
-        :items-per-page-options="[5, 10, 15, 20]"
-      >
-        <template v-slot:top>
-          <thead>
-            <tr>
-              <th style="width: 100px; text-align: center; align-items: center;">
-                <v-checkbox
-                  v-model="stakeholdersAllSelected"
-                  @change="toggleSelectAll"
-                ></v-checkbox>
-              </th>
-              <th style="width: 300px; text-align: center; align-items: center;">事業者・会社名</th>
-              <th style="width: 300px; text-align: center; align-items: center;">区分</th>
-            </tr>
-          </thead>
-        </template>
-        <template v-slot:item="{ item }">
-          <tr>
-            <td style="width: 100px; text-align: center;table-layout: fixed;">
-              <v-checkbox
-                v-model="stakeholdersSelected"
-                :value="item.operatorId"
-                @click.stop
-              ></v-checkbox>
-            </td>
-            <td style="width: 300px; text-align: left;">{{ item.operatorName }}</td>
-            <td style="width: 300px; text-align: left;">{{ item.roleList }}</td>
-          </tr>
-        </template>
-      </v-data-table>
-    </div>
-    <!-- .item-center -->
-    <div class="item-center">
-      <input type="button" class="e-button-add" value="登録" @click="stakeholdersRegister" />
-    </div>
-    <!-- .item-center -->
-  </div>
-  <!-- .popup -->
-  <!-- モーダルウィンドウ ここまで -->
-
   <!-- 詳細情報 -->
   <v-card-text class="drn_content">
     <div class="drn_content__body">
@@ -62,76 +10,63 @@
         </div>
 
         <div class="detailList">
+          <!-- ★１ -->
           <table class="info-table">
             <tr>
-              <td class="drn_situation__label">関係者通知</td>
-              <td class="drn_situation__data">{{ stakeholdersText }}</td>
-              <td class="drn_situation__data">
-                <input type="button" class="e-button-mod" value="変更" @click="togglePopup" />
-              </td>
-            </tr>
-          </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
-            <tr>
-              <td class="drn_situation__label">航路</td>
+              <td class="drn_situation__label">航路名</td>
               <td class="drn_situation__data">{{ routeName }}</td>
             </tr>
-          </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
             <tr>
-              <td class="drn_situation__label">区間</td>
-              <td class="drn_situation__data">{{ airwayJunctionRange }}</td>
-            </tr>
-          </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
-            <tr>
-              <td class="drn_situation__label">飛行目的</td>
-              <td class="drn_situation__data">{{ purpose }}</td>
-            </tr>
-          </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
-            <tr>
-              <td class="drn_situation__label">機体種別</td>
+              <td class="drn_situation__label">モデル名</td>
               <td class="drn_situation__data">{{ joinedType }}</td>
             </tr>
-          </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
             <tr>
-              <v-timeline side="end" truncate-line="both" size="x-small" class="drn_timeline">
-                <v-timeline-item v-for="(item, index) in combinedList" :key="index" v-bind:hide-dot="index % 2 == 0 ? false : true" v-bind:class="[index % 2 == 0 ? 'drn_timeline__item' : 'drn_timeline__item drn_timeline__item--via']">
-                  <template v-slot:icon>
-                    <span>{{ item.id }}</span>
-                  </template>
-                  <v-text-field :value="item.name" readonly></v-text-field>
-                </v-timeline-item>
-              </v-timeline>
+              <td class="drn_situation__label">最大落下範囲</td>
+              <td class="drn_situation__data">{{ fallToleranceRange }}</td>
+            </tr>
+            <tr>
+              <td class="drn_situation__label">航路運営会社</td>
+              <td v-if="cookie_role" class="drn_situation__data">{{ airwayOperator }}</td>
+            </tr>
+            <tr>
+              <td class="drn_situation__label">画定日</td>
+              <td class="drn_situation__data">{{ determinationDate }}</td>
             </tr>
           </table>
+          <!-- 高度グラフ -->
+          <table class="info-table info-table--chart">
+            <tr>
+              <td class="drn_situation__label">高度</td>
+              <td><ChartComponent v-if="parsedcorridorData" :corridorData="parsedcorridorData" /></td>
+            </tr>
+          </table>
+          <!-- 総距離 -->
           <table class="info-table">
             <tr>
               <td class="drn_situation__label">総距離</td>
               <td class="drn_situation__data">{{ airwayDistance }}</td>
             </tr>
           </table>
-          <hr class="custom-hr" />
-            <ChartComponent v-if="parsedcorridorData" :corridorData="parsedcorridorData" />
-            <img src="/assets/css/img/chart/altitude150.png">
-            <table class="info-table">
+          <!-- 区間 -->
+          <table class="info-table info-table--section">
             <tr>
-              <td class="drn_situation__label"></td>
-              <td class="drn_situation__data">高度150m (高度は目安です)</td>
-            </tr>
-            </table>
-          <hr class="custom-hr" />
-          <table class="info-table">
-            <tr>
-              <td class="drn_situation__label">運航事業者</td>
-              <td v-if="cookie_role" class="drn_situation__data">{{ airwayOperator }}</td>
+              <td class="drn_situation__label wl-vcenter-label">区間</td>
+              <td class="drn_situation__data">
+                <div class="waypoint-list">
+                  <template v-for="(item, index) in combinedList" :key="index">
+                    <div v-if="index % 2 === 0" class="wl-wp">
+                      <div class="wl-left">
+                        <div class="wl-icon-wrap" v-html="sidebarIcon(item.id)"></div>
+                      </div>
+                      <span class="wl-wp-name">{{ item.name }}</span>
+                    </div>
+                    <div v-else class="wl-sec">
+                      <div class="wl-left"></div>
+                      <span class="wl-sec-name">{{ item.name }}</span>
+                    </div>
+                  </template>
+                </div>
+              </td>
             </tr>
           </table>
         </div>
@@ -141,7 +76,7 @@
 
       <!-- 右カラム：マッププレビュー -->
       <v-sheet rounded="lg" color="default" class="drn_content__map--scroll">
-        <MapComponent :corridorData="parsedcorridorData" :message="fallToleranceRangeId" class="confirmationMap" :stepNo="stepNo"/>
+        <MapComponent :key="mapKey" :corridorData="parsedcorridorData" :message="fallToleranceRangeId" class="confirmationMap" :stepNo="stepNo" :errorSectionIndex="errorSectionIndex" :contactCoordinates="contactCoordinates"/>
       </v-sheet>
       <!-- drn_content__map -->
 
@@ -164,14 +99,17 @@ export default {
   },
   props: [
     "rangeData",
-    "stakeholders",
-    "stakeholdersSelected",
     'stepNo',
+    'errorSectionIndex',
+    'contactCoordinates',
   ],
   data() {
     return {
       fallToleranceRangeId: this.rangeData.fallToleranceRangeId,
       stepNo: this.stepNo,
+      errorSectionIndex: this.errorSectionIndex ?? -1,
+      contactCoordinates: this.contactCoordinates ?? null,
+      mapKey: 0,
       };
   },
   async created() {
@@ -203,15 +141,10 @@ export default {
   },
   async setup(props, { emit }) {
     const purpose = props.rangeData.purpose;
-    const type = props.rangeData.type;
     const routeName = props.rangeData.routeName;
     const fallToleranceRangeId = props.rangeData.fallToleranceRangeId;
     const corridorData = props.rangeData.corridorData;
-    const stakeholders = ref(props.stakeholders);
-    const stakeholdersSelected = ref(props.stakeholdersSelected);
-    const showStakeholdersPopup = ref(false);
-    const stakeholdersAllSelected = ref(false);
-    const itemsPerPage = 10;
+    const selectedModels = props.rangeData.selectedModels;
 
     const parsedcorridorData = corridorData.value;
     console.log(parsedcorridorData);
@@ -255,7 +188,10 @@ export default {
     const airwayOperator = cookie_role.value.operatorName;
     console.log(airwayOperator);
 
-    let postJsonData = {
+    const fallToleranceRange = props.rangeData.fallToleranceRange;
+    const determinationDate = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+    let postJsonDataTmp = {
       "airwayDeterminationId": parsedcorridorData.determination_id,
       "airwayName": parsedcorridorData.airwayName,
       "flightPurpose": parsedcorridorData.flightPurpose,
@@ -271,7 +207,7 @@ export default {
               coordinates: parsedcorridorData.despersion_nodes[i].geometry.coordinates,
               type: 'LineString'
             },
-            fallSpaceCrossSectionId: parsedcorridorData.despersion_nodes[i].fallSpaceCrossSectionId
+            feasibleVolSeamId: parsedcorridorData.despersion_nodes[i].feasibleVolSeamId
           },
           airwayJunction: [{
             name: parsedcorridorData.airwayJunctions[i].airwayJunctionName,
@@ -289,38 +225,42 @@ export default {
             null
         };
         console.log(airwayPart);
-        postJsonData.airwayParts.push(airwayPart);
+        postJsonDataTmp.airwayParts.push(airwayPart);
     }
 
+    const tmp = convertAirwayToUaslAddJunction(postJsonDataTmp)
+    const postJsonData = shiftSectionNames(tmp)
     console.log("postJsonData",postJsonData);
     emit('update:postJsonData', postJsonData);
-    console.log("stakeholdersSelected", stakeholdersSelected.value);
 
     return {
       //showModal,
       airwayDistance,
       airwayJunctionRange,
       airwayOperator,
+      fallToleranceRange,
+      determinationDate,
 
       purpose,
-      type,
       routeName,
       fallToleranceRangeId,
       corridorData,
       parsedcorridorData,
+      selectedModels,
 
       cookie_role,
       role,
-
-      stakeholders,
-      stakeholdersSelected,
-      showStakeholdersPopup,
-      stakeholdersAllSelected,
-      itemsPerPage,
     };
   },
+  methods: {
+    sidebarIcon(number) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 33.818 33.818">
+        <circle cx="16.909" cy="16.909" r="14.909" fill="white" stroke="#2C69FF" stroke-width="4"/>
+        <text x="16.909" y="22" text-anchor="middle" font-size="16" font-family="MeiryoUI-Bold, Meiryo UI" font-weight="700" fill="#2C69FF">${number}</text>
+      </svg>`;
+    },
+  },
   computed: {
-
     combinedList() {
       const points = this.parsedcorridorData.airwayJunctions || [];
       const sections = this.parsedcorridorData.airwaySections || [];
@@ -340,40 +280,17 @@ export default {
       return combined;
     },
     joinedType() {
-      return this.type.join();
+      return this.selectedModels.join();
     },
-    stakeholdersText() {
-      const selectedData = this.stakeholders.filter(item =>
-        this.stakeholdersSelected.includes(item.operatorId)
-      );
-
-      /* もしselectedDataのリストの要素が1個以下ならば、その値（operatorName）をreturnする */
-      if (selectedData.length <= 1) {
-        return selectedData.map(item => item.operatorName).join('');
-      }
-
-      /* もしselectedDataのリストの要素が2個以上ならば、先頭の値（operatorName）に",...(リストの要素数)"を付与した文字列をreturnする */
-      return `${selectedData[0].operatorName},...(${selectedData.length})`;
+  },
+  watch: {
+    errorSectionIndex(newVal) {
+      this.errorSectionIndex = newVal ?? -1;
+      this.mapKey += 1;
     },
-    togglePopup() {
-      this.showStakeholdersPopup = !this.showStakeholdersPopup;
-      console.log('showStakeholdersPopup:', this.showStakeholdersPopup);
-    },
-    toggleSelectAll() {
-      if (this.stakeholdersAllSelected) {
-        this.stakeholdersSelected = this.stakeholders.map(item => item.operatorId);
-      } else {
-        this.stakeholdersSelected = [];
-      }
-    },
-    stakeholdersRegister() {
-      const selectedData = this.stakeholders.filter(item =>
-        this.stakeholdersSelected.includes(item.operatorId)
-      );
-      console.log("stakeholdersSelected",this.stakeholdersSelected);
-      this.$emit('update:addStakeholdersSelected', this.stakeholdersSelected);
-      // ポップアップを非表示にする
-      this.showStakeholdersPopup = false;
+    contactCoordinates(newVal) {
+      this.contactCoordinates = newVal ?? null;
+      this.mapKey += 1;
     },
   },
 }
@@ -413,71 +330,95 @@ div#content.b-twoColumn.landmarkFormList {
   border-radius: 5px;
 }
 
-.custom-hr {
-  margin: 10px 0;
-  border: none;
-  border-top: 1px solid #ccc;
-}
-
 .info-table {
   width: 100%;
-  margin: 10px 0;
-  font-size: 15px;
-  border-spacing: 20px 0px;
-  border-collapse: separate
+  margin: 4px 0;
+  font-size: 14px;
+  border-spacing: 8px 0px;
+  border-collapse: separate;
 }
 
 .info-table td:first-child {
   width: 30%;
   font-weight: bold;
-  text-align: right;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.info-table--chart td:first-child,
+.info-table--section td:first-child {
+  width: 1%;
 }
 
 .info-table td {
-  padding: 5px;
+  padding: 3px;
+  vertical-align: top;
 }
 
-.e-button-mod {
-  width: 98px;
-  height: 25px;
-  background: none; /* 背景色を無しに設定 */
-  border: none; /* 枠線を無しに設定 */
-  font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-14)/var(--unnamed-line-spacing-14) var(--unnamed-font-family-biz-udpgothic);
-  letter-spacing: var(--unnamed-character-spacing-0);
-  color: blue; /* テキストの色を青に設定 */
-  text-align: center;
-  margin-top: 15px;
-  margin-bottom: 10px;
+.wl-vcenter-label {
+  vertical-align: top;
+  padding-top: 6px;
 }
 
-.e-button-add{
-  width: 98px;
-  height: 25px;
-  background: var(--txt_-333333) 0% 0% no-repeat padding-box;
-  border: 1px solid var(--line_-999999);
-  font: var(--unnamed-font-style-normal) normal var(--unnamed-font-weight-normal) var(--unnamed-font-size-14)/var(--unnamed-line-spacing-14) var(--unnamed-font-family-biz-udpgothic);
-  letter-spacing: var(--unnamed-character-spacing-0);
-  color: var(--unnamed-color-ffffff);
-  text-align: center;
-  margin-top: 15px;
-  margin-bottom: 10px;
+.waypoint-list {
+  position: relative;
+  margin-left: 20px;
 }
 
-.popup {
+.waypoint-list::before {
+  content: '';
   position: absolute;
-  top: 165px;
-  left: 20px;
-  width: 800px;
-  height: auto;
-  background-color: #fefefe;
-  border: 1px solid #888;
-  padding: 21px 55px;
-  z-index: 10000;
-  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+  left: 5px;
+  top: 12px;
+  bottom: 12px;
+  width: 14px;
+  background: #2C69FF;
 }
 
-.item-center {
+.waypoint-list::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  bottom: 12px;
+  width: 8px;
+  background: #B1C8FF;
+}
+
+.wl-wp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wl-sec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+}
+
+.wl-left {
+  width: 24px;
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+}
+
+.wl-icon-wrap {
+  flex-shrink: 0;
+  line-height: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.wl-wp-name {
+  font-size: 13px;
+}
+
+.wl-sec-name {
+  font-size: 12px;
+  color: #bbb;
 }
 </style>
