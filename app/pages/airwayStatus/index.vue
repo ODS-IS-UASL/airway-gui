@@ -7,17 +7,20 @@
   <!-- コンテンツ -->
   <main id="main" class="b-pageMain">
     <div class="b-pageContentHasSubMenu">
+      <div class="b-pageContentHasNavigation b-pageContentHasNavigation--fill">
         <!-- テーブル -->
         <AirwayStatusItemList
-          v-if="airwayData  && reservationData"
-          :reservationData="reservationData"
+          :reservationData="reservationData || { result: [] }"
           :airwayData="airwayData"
+          :airwayDataLoading="airwayDataLoading"
+          :reservationLoading="reservationLoading"
+          :ownDataReady="ownDataReady"
         />
+      </div>
+      <!-- ページナビゲーション -->
+      <PageNavigation :back="true">
+      </PageNavigation>
     </div>
-
-    <!-- ページナビゲーション -->
-    <PageNavigation :back="true">
-    </PageNavigation>
   </main>
 </template>
 
@@ -39,12 +42,17 @@ export default {
     GlobalNavigationSH,
     PageNavigation
   },
+  setup() {
+    const { airwayData, ownDataReady, airwayDataLoading, startLoading } = useAirwayReservationLoader();
+    return { airwayData, ownDataReady, airwayDataLoading, startLoading };
+  },
   data() {
     return {
-      airwayData: null, 
       reservationData: null,
+      reservationLoading: true,
       cookie_role: null,
       role: null,
+      parentOperatorId: null,
     };
   },
   async created() {
@@ -75,63 +83,69 @@ export default {
     }
   },
   async mounted() {
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const airwayUrl = `${airwayApiBaseUrl}/airway`;
-    const airwayRes = await axios_get(airwayUrl, {all: 'true'}, {});
-    console.log(airwayRes);
-    if (airwayRes.status != 200) {
-      console.error(`error: get airway info {status: ${airwayRes.status}}.`);
-      this.airwayData = {};
-      return;
+    if (typeof window !== 'undefined') {
+      this.parentOperatorId = localStorage.getItem('uasl:user:parentOperatorId');
     }
-    this.airwayData = useAirwayConvertConnectionOrder(airwayRes.data);
-    
-    let lastPage = 1;
-    let currentPage = 1;
-    let tmpReservationData = null;
-    let reservationUrl = '';
-    const reservationApiBaseUrl = useRuntimeConfig().public.reservationApiBaseUrl;
 
-    switch (this.role) {
-      case 2:
-        reservationUrl = `${reservationApiBaseUrl}/operator/${this.cookie_role.operatorId}/airwayReservations`;
-        break;
-      case 1:
-      case 3:
-        reservationUrl = `${reservationApiBaseUrl}/admin/airwayReservations`;
-        break;
-      default:
-        console.log("error: get airway reservation info (permision denied.)");
-        this.reservationData = {};
-        return;
-    }
-    let reservationRes = await axios_get(reservationUrl, {}, {});
-    console.log(reservationRes);
-    if (reservationRes.status != 200) {
-      console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
-      this.reservationData = {};
-      return;
-    }
-    tmpReservationData = reservationRes.data;
-    currentPage = 1;
-    lastPage = reservationRes.data.lastPage;
+    // role が確定したら実行（created() が非同期のため watch で待機）
+    var unwatch = this.$watch('role', async () => {
+      if (this.role !== null) {
+        let lastPage = 1;
+        let currentPage = 1;
+        let tmpReservationData = null;
+        let reservationUrl = '';
 
-    while (currentPage < lastPage) {
-      currentPage++;
-      let reservationRes = await axios_get(reservationUrl, {page: currentPage}, {});
-      console.log(reservationRes);
-      if (reservationRes.status != 200) {
-        console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
-        this.reservationData = {};
-        return;
+        switch (this.role) {
+          case 2:
+          case 3:
+            reservationUrl = `/api/reservation/operator/${this.parentOperatorId}/uaslReservations`;
+            break;
+          case 1:
+            reservationUrl = `/api/reservation/admin/uaslReservations`;
+            break;
+          default:
+            console.log("error: get airway reservation info (permision denied.)");
+            this.reservationData = {};
+            return;
+        }
+
+        let reservationRes = await $fetch(reservationUrl, { method: 'GET' });
+        if (reservationRes.status !== 200) {
+          console.error(`error: get airway reservation info {status: ${reservationRes.status}}.`);
+          this.reservationData = {};
+          return;
+        }
+
+        reservationRes.data = utils.convertUaslToAirwayReservation(reservationRes.data);
+        tmpReservationData = reservationRes.data;
+        currentPage = 1;
+        lastPage = reservationRes.data.lastPage;
+
+        while (currentPage < lastPage) {
+          currentPage++;
+          let reservationRes2 = await $fetch(reservationUrl, { method: 'GET', query: { page: currentPage } });
+          if (reservationRes2.status !== 200) {
+            console.error(`error: get airway reservation info {status: ${reservationRes2.status}}.`);
+            this.reservationData = {};
+            return;
+          }
+          reservationRes2.data = utils.convertUaslToAirwayReservation(reservationRes2.data);
+          reservationRes2.data.result.forEach((reservation) => {
+            tmpReservationData.result.push(reservation);
+          });
+        }
+
+        // requestId で重複排除（adminエンドポイントは同一 requestId が複数返ることがある）
+        const uniqueMap = new Map(tmpReservationData.result.map((r) => [r.requestId, r]));
+        this.reservationData = { ...tmpReservationData, result: Array.from(uniqueMap.values()) };
+        this.reservationLoading = false;
+
+        // Stage2・Stage3 は useAirwayReservationLoader で管理
+        await this.startLoading(this.reservationData);
+
+        unwatch();
       }
-
-      reservationRes.data.result.forEach((reservation) => {
-        tmpReservationData.result.push(reservation);
-      })
-    }
-
-    this.reservationData = tmpReservationData;
+    });
   },
 };
 </script>
