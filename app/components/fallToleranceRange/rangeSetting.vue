@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 新規最大落下許容範囲設定
+ * 新規最大落下範囲設定
  * 範囲設定
  */
 import CreateFallToleranceRange from "~/components/map/createFallToleranceRange.vue";
@@ -25,7 +25,7 @@ import CreateFallToleranceRange from "~/components/map/createFallToleranceRange.
 
   <!-- 詳細情報 -->
   <div id="content" class="b-routeCutPlaneSetting">
-    <h2 class="u-invisible">最大落下許容範囲設定</h2>
+    <h2 class="u-invisible">最大落下範囲設定</h2>
     <CreateFallToleranceRange :stepNo="stepNo" :area="areaName" :areaInfo="rangeData.areaInfo" @markerClosed="handleMarkerAdded" />
   </div>
 </template>
