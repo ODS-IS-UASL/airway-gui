@@ -80,6 +80,9 @@ interface DronePort {
   dronePortManufacturerId: any
   visDronePortCompanyId: any
   storedAircraftId: any
+  // 料金表管理改修  Start
+  priceInfos: any
+  // 料金表管理改修  End
 }
 
 onBeforeMount(async () => {
@@ -297,10 +300,13 @@ const displayMapPopup = (lat: number, lon: number) => {
 const loadingData = async () => {
   // spinerOn
   await loadOn()
-  const apiResult = await useRestApiDronePortGetList(params as DronePortGetListRequestQueryParams)
+  const apiResult = await $fetch('/api/drone/droneport/info/list', { 
+    method: 'GET',
+    query: params
+  });
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    const resultJson = (await apiResult.json()) as DronePortGetListResponse
+    const resultJson = apiResult.data
     const dataList = resultJson.data // 検索結果
     lastPage.value = Number(resultJson.lastPage) // 最終ページ
     totalItems.value = Number(resultJson.total) // 取得データ総件数
@@ -325,16 +331,18 @@ const loadingData = async () => {
         storedAircraftId: data.storedAircraftId, // 格納中機体ID
         dronePortManufacturerId: extractionMakerId(data.dronePortId), // 離着陸場メーカーID
         visDronePortCompanyId: data.visDronePortCompanyId, // VIS離着陸場事業者ID
+        // 料金表管理改修  Start
+        priceInfos: (data.priceInfos ?? []).slice().sort((a: any, b: any) => Number(a.priority ?? 0) - Number(b.priority ?? 0)),
+        // 料金表管理改修  End
       }
     })
     dronePorts.value = newDataList
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json()
     commonDialogVisible.value = true
-    if (responseBody.errorDetail) {
-      errorMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+    if (apiResult?.data?.errorDetail) {
+      errorMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：${apiResult.data.errorDetail})`
     }
     else {
       errorMessage.value = `離着陸場一覧情報の取得に失敗しました。(エラー詳細：)`
@@ -345,21 +353,25 @@ const loadingData = async () => {
 
 // データ取得処理(離着陸場情報詳細取得API)
 const loadingDetailData = async (params: any) => {
-  const apiResult = await useRestApiDronePortGetByPk(params)
-
+  // 料金表管理改修  Start
+  const apiResult = await $fetch(`/api/drone/droneport/info/detail/${params}`, { 
+    method: 'GET',
+    query: { isRequiredPriceInfo: true }
+  });
+  // 料金表管理改修  End
   if (utils.isNormalStatusResponse(apiResult.status)) {
     // 取得成功時処理
-    return await apiResult.json() as DronePortGetByPkResponse
+    return apiResult.data
   }
   else {
     // 取得失敗時処理
-    const responseBody = await apiResult.json() as CommonResponse
+    const responseBody = apiResult.data
     getByPkFailedDialogVisible.value = true
-    if (responseBody.errorDetail) {
+    if (responseBody?.errorDetail) {
       errorMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
     }
     else {
-      errorMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：${responseBody.errorDetail})`
+      errorMessage.value = `離着陸場情報の取得に失敗しました。(エラー詳細：`
     }
   }
 }
@@ -417,6 +429,9 @@ const onRowClick = async (event: any, row: any) => {
   selectedRow.value = row
   const detailData = await loadingDetailData(row.dronePortId)
   selectedRow.value.imageData = detailData?.imageData
+  // 料金表管理改修  Start
+  selectedRow.value.priceInfos = (detailData?.priceInfos ?? []).slice().sort((a: any, b: any) => Number(a.priority ?? 0) - Number(b.priority ?? 0));
+  // 料金表管理改修  End
   await loadOff()
 }
 /**
@@ -962,6 +977,63 @@ const nyuryokuShiteKudasai = (item: string) => {
                         </v-card>
                       </v-col>
                     </v-row>
+
+                    <!-- 料金表管理改修  Start -->
+                    <v-divider class="border-opacity-25 my-5" />
+                    <v-row>
+                      <v-col cols="4" class="font-weight-bold">
+                        料金表管理
+                      </v-col>
+                    </v-row>
+
+                    <template v-for="(priceInfo, index) in selectedRow?.priceInfos" :key="priceInfo.priceId ?? index">
+                      <!-- 料金単価(円) -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">料金単価(円)</v-col>
+                        <v-col>{{ utils.formatPrice(priceInfo.price) }}</v-col>
+                      </v-row>
+
+                      <!-- 料金タイプ -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">料金タイプ</v-col>
+                        <v-col>{{ convertCode(priceInfo.priceType, 'priceType') }}</v-col>
+                      </v-row>
+
+                      <!-- 時間単位 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">時間単位</v-col>
+                        <v-col>{{ priceInfo.pricePerUnit }}</v-col>
+                      </v-row>
+
+                      <!-- 適用開始日時 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">適用開始日時</v-col>
+                        <v-col>{{ utils.toFormatJSTtime(priceInfo.effectiveStartTime, constants.format.datetimeWithSeconds, 'local') }}</v-col>
+                      </v-row>
+
+                      <!-- 適用終了日時 -->
+                      <v-row no-gutters>
+                        <v-col cols="4" />
+                        <v-col cols="3">適用終了日時</v-col>
+                        <v-col>{{ utils.toFormatJSTtime(priceInfo.effectiveEndTime, constants.format.datetimeWithSeconds, 'local') }}</v-col>
+                      </v-row>
+
+                      <v-row
+                        v-if="index !== selectedRow!.priceInfos!.length - 1"
+                        no-gutters
+                        class="my-5"
+                      >
+                        <v-col cols="4" />
+                        <v-col>
+                          <v-divider class="border-opacity-25" />
+                        </v-col>
+                      </v-row>
+                    </template>
+                    <!-- 料金表管理改修  End -->
                   </v-card>
                 </v-col>
               </v-row>
