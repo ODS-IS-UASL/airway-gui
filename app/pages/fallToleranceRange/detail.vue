@@ -14,7 +14,7 @@
       <!-- ヘッダ -->
       <div class="drn_header">
         <div class="drn_header__item">
-          <v-card-title class="drn_header__title">最大落下許容範囲詳細</v-card-title>
+          <v-card-title class="drn_header__title">最大落下範囲詳細</v-card-title>
         </div>
       </div>
 
@@ -25,7 +25,7 @@
           <table class="drn_table drn_table--reserve_conf">
             <tbody>
               <tr class="drn_table__row">
-                <th class="drn_table__label">最大落下許容範囲ID</th>
+                <th class="drn_table__label">最大落下範囲ID</th>
                 <td class="drn_table__data">{{ selectedRouteFid }}</td>
               </tr>
               <tr><td class="drn_table__space"></td></tr>
@@ -35,7 +35,7 @@
               </tr>
               <tr><td class="drn_table__space"></td></tr>
               <tr class="drn_table__row">
-                <th class="drn_table__label">最大落下許容範囲名</th>
+                <th class="drn_table__label">最大落下範囲名</th>
                 <td class="drn_table__data">{{ name }}</td>
               </tr>
               <tr><td class="drn_table__space"></td></tr>
@@ -45,8 +45,13 @@
               </tr>
               <tr><td class="drn_table__space"></td></tr>
               <tr class="drn_table__row">
-                <th class="drn_table__label">航路運営者</th>
-                <td class="drn_table__data">{{ companyName }}</td>
+                <th class="drn_table__label">系統</th>
+                <td class="drn_table__data">{{ typeName }}</td>
+              </tr>
+              <tr><td class="drn_table__space"></td></tr>
+              <tr class="drn_table__row">
+                <th class="drn_table__label">地域</th>
+                <td class="drn_table__data">{{ regionName }}</td>
               </tr>
             </tbody>
           </table>
@@ -76,15 +81,15 @@
     <div v-if="confirmDialogVisible" class="overlay"></div>
     <!-- ダイアログ -->
     <dialog class="c-dialog" v-if="confirmDialogVisible">
-      <h2 class="e-dialogTitle">本当にこの最大落下許容範囲を削除しますか？</h2>
+      <h2 class="e-dialogTitle">本当にこの最大落下範囲を削除しますか？</h2>
       <table class="c-labeledList">
         <tbody>
           <tr class="c-labeledListRow">
-            <th class="e-listLabel">最大落下許容範囲ID：</th>
+            <th class="e-listLabel">最大落下範囲ID：</th>
             <td class="e-listValue">{{ selectedRouteFid }}</td>
            </tr>
            <tr class="c-labeledListRow">
-             <th class="e-listLabel">最大落下許容範囲名：</th>
+             <th class="e-listLabel">最大落下範囲名：</th>
              <td class="e-listValue">{{ name }}</td>
            </tr>
         </tbody>
@@ -106,21 +111,18 @@
       <table class="c-labeledList">
         <tbody>
           <tr class="c-labeledListRow">
-            <th class="e-listLabel">最大落下許容範囲ID：</th>
+            <th class="e-listLabel">最大落下範囲ID：</th>
             <td class="e-listValue">{{ selectedRouteFid }}</td>
            </tr>
            <tr class="c-labeledListRow">
-             <th class="e-listLabel">最大落下許容範囲名：</th>
+             <th class="e-listLabel">最大落下範囲名：</th>
              <td class="e-listValue">{{ name }}</td>
            </tr>
         </tbody>
       </table>
       <ul class="e-buttonGroup">
         <li>
-          <a class="e-button-noright" href="/fallToleranceRange">最大落下許容範囲一覧へ戻る</a>
-        </li>
-        <li>
-          <button class="e-button-noright" @click="closeFnishModal">このウィンドウを閉じる</button>
+          <a class="e-button-noright" href="/fallToleranceRange">最大落下範囲一覧へ戻る</a>
         </li>
       </ul>
     </dialog>
@@ -148,7 +150,8 @@ export default {
       role: null,
       rangeData: null,
       operatorId: null,
-      companyName: null,
+      typeName: null,
+      regionName: null,
       operatorData: null,
     };
   },
@@ -159,19 +162,20 @@ export default {
     MapComponent
   },
   async mounted() {
-    const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-    const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-    const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+    const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+      method: 'GET',
+      query: { businessNumber: localStorage.getItem('uasl:user:parentOperatorId') }
+    });
     console.log(rangeRes);
     if (rangeRes.status != 200) {
       console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
       this.rangeData = null;
       return;
     } else {
-      this.rangeData = rangeRes.data;
+      this.rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
     }
     if (this.rangeData && this.rangeData.fallToleranceRanges) {
-      // 最大落下許容範囲を作成したOperatorIdを取得
+      // 最大落下範囲を作成したOperatorIdを取得
       for (let i=0; i<this.rangeData.fallToleranceRanges.length; i++) {
         const range = this.rangeData.fallToleranceRanges[i];
         if (range.fallToleranceRangeId == this.selectedRouteFid) {
@@ -181,25 +185,13 @@ export default {
     }
 
     console.log(`fallToleranceRange operatorId: ${this.operatorId}`);
-    // 事業者一覧情報を取得
-    const miscApiBaseUrl = useRuntimeConfig().public.miscApiBaseUrl;
-    const operatorUrl = `${miscApiBaseUrl}/operator`;
-    const operatorRes = await axios_get(operatorUrl);
-    if (operatorRes.status !== 200) {
-      this.operatorData = {};
-      console.error(`error: get operator info {status: ${operatorRes.status}}.`);
-      return;
-    } else {
-      this.operatorData = {};
-      this.operatorData = operatorRes.data;
-    }
-    if (Object.keys(this.operatorData).length > 0){
-      // 最大落下許容範囲を作成したOperatorIdの事業者名を取得
-      this.companyName = getcompanyName(this.operatorData, this.operatorId);
-    } else {
-      this.companyName = "Not found";
-    }
+    // /operator廃止につき事業者情報取得は展進しない
 
+
+    // 系統
+    this.typeName = useRuntimeConfig().public.typeList.find(item => (item.value == this.$route.query.typeId))?.title ?? "Not found";
+    // 地域
+    this.regionName = useRuntimeConfig().public.regionList.find(item => (item.value == this.$route.query.regionId))?.title ?? "Not found"
   },
   async created() {
     if (process.client) {
@@ -242,10 +234,6 @@ export default {
       finishDialogVisible.value = true;
       deleteFallToleranceRange();
     };
-    /* 終了モーダルの非表示 */
-    const closeFnishModal = async () => {
-      finishDialogVisible.value = false;
-    };
     const message = ref("");
     const deleteFallToleranceRange = async () => {
       /* 最大許容落下範囲情報削除 */
@@ -253,21 +241,22 @@ export default {
       const selectedRouteFid = route.query.fid;
       console.log(`selectedRouteFid`);
       console.log(selectedRouteFid);
-      const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-      const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
       const params = {
-        fallToleranceRangeId: selectedRouteFid,
-        businessNumber: useRuntimeConfig().public.businessNumber
+        maxFallRangeId: selectedRouteFid,
+        businessNumber: localStorage.getItem('uasl:user:parentOperatorId')
       }
-      const response = await axios_delete(rangeUrl, params);
+      const response = await $fetch('/api/airway/max-fall-range', { 
+        method: 'DELETE',
+        query: params
+      });
       console.log(response);
       const status = response.status;
       if (status === 204) {
-        message.value = "最大落下許容範囲の削除に成功しました。";
+        message.value = "最大落下範囲の削除に成功しました。";
       } else if (status === 409) {
-        message.value = "最大落下許容範囲の削除に失敗しました。最大落下許容範囲が既に航路画定に使用されています。";
+        message.value = "最大落下範囲の削除に失敗しました。最大落下範囲が既に航路画定に使用されています。";
       } else {
-        message.value = "最大落下許容範囲の削除に失敗しました。";
+        message.value = "最大落下範囲の削除に失敗しました。";
       }
     };
 
@@ -277,7 +266,6 @@ export default {
       closeConfirmModal,
       finishDialogVisible,
       showFnishModal,
-      closeFnishModal,
       deleteFallToleranceRange,
       message,
     };
