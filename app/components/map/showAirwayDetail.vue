@@ -39,10 +39,6 @@ export default {
   setup(props) {
     const map = ref(null);  // 地図インスタンス
     let L;
-    const geoJsonBldg = ref(null);
-    const geoJsonTran = ref(null);
-    const geoJsonRwy = ref(null);
-    const geoJsonFld = ref(null);
     let map_moveend = ref(false);
     let markerListInit = [[null, null]];
     let markerCountInit = 0;
@@ -59,17 +55,6 @@ export default {
 
     const MapLayerControlMounted = ref(true);
     const stepNo = ref(props.stepNo);
-
-    const loadGeoJson = async () => {
-      let jsonFile = await fetch('/geojson/bldg_533877.geojson'); // ゼンリン地物情報未契約の場合は使用不可、コンテナ内からファイルを削除する
-      geoJsonBldg.value = await jsonFile.json();
-      jsonFile = await fetch('/geojson/tran_53387734-35-44-45.geojson'); // ゼンリン地物情報未契約の場合は使用不可、コンテナ内からファイルを削除する
-      geoJsonTran.value = await jsonFile.json();
-      jsonFile = await fetch('/geojson/fld_53387734-35-44-45.geojson'); // ゼンリン地物情報未契約の場合は使用不可、コンテナ内からファイルを削除する
-      geoJsonFld.value = await jsonFile.json();
-      jsonFile = await fetch('/geojson/rwy_533877.geojson'); // ゼンリン地物情報未契約の場合は使用不可、コンテナ内からファイルを削除する
-      geoJsonRwy.value = await jsonFile.json();
-    }
 
     // 地図を描画する非同期関数
     const renderMap = async (data) => {
@@ -137,66 +122,39 @@ export default {
 
         // 地図にポリラインを描画
         if (polyline.length > 0) {
-          L.polyline(polyline, {
-            color: 'white',
-            weight: 35,
-            opacity: 1,
-          }).addTo(map.value);
-
-          L.polyline(polyline, {
-            color: '#BBBBBB',
-            weight: 30,
-            opacity: 1,
-          }).addTo(map.value);
+          L.polyline(polyline, airwayOptions).addTo(map.value);
+          L.polyline(polyline, airwayInnerOptions).addTo(map.value);
         }
 
         // 各座標にマーカーを追加
-        const svgTemplate = (number) => `
-          <svg xmlns="http://www.w3.org/2000/svg" width="33.818" height="33.818" viewBox="0 0 33.818 33.818">
-            <g id="グループ_1434" data-name="グループ 1434" transform="translate(-17.05 -30.53)">
-              <g id="グループ_167" data-name="グループ 167" transform="translate(17.05 30.53)">
-                <g id="楕円形_45" data-name="楕円形 45" fill="#fff" stroke="#000" stroke-miterlimit="10" stroke-width="2">
-                  <circle cx="16.909" cy="16.909" r="16.909" stroke="none"/>
-                  <circle cx="16.909" cy="16.909" r="15.909" fill="none"/>
-                </g>
-                <g id="グループ_166" data-name="グループ 166" transform="translate(5.251 5.871)">
-                  <line id="線_208" data-name="線 208" x2="22.545" y2="22.545" fill="#fff" stroke="#000" stroke-miterlimit="10" stroke-width="2"/>
-                  <line id="線_209" data-name="線 209" x1="22.118" y2="22.118" transform="translate(0.427)" fill="#fff" stroke="#000" stroke-miterlimit="10" stroke-width="2"/>
-                </g>
-              </g>
-              <g id="グループ_168" data-name="グループ 168" transform="translate(22.659 31.288)">
-                <ellipse id="楕円形_46" data-name="楕円形 46" cx="10.789" cy="11.71" rx="10.789" ry="11.71" transform="translate(0 6.837)" fill="#fff" opacity="0.7"/>
-                <text id="_6" data-name="6" transform="translate(10.274 23)" font-size="22" font-family="MeiryoUI-Bold, Meiryo UI" font-weight="700"><tspan x="-7.444" y="0">${number}</tspan></text>
-                <text id="_6-2" data-name="6" transform="translate(10.274 23)" font-size="22" font-family="MeiryoUI-Bold, Meiryo UI" font-weight="700"><tspan x="-7.444" y="0">${number}</tspan></text>
-              </g>
-            </g>
-          </svg>
-        `;
-
         polyline.forEach((coord, index) => {
-          let sectionIcon = L.divIcon({
+          const sectionIcon = L.divIcon({
             className: '',
-            html: svgTemplate(index + 1), // 各マーカーに対して動的に数字を設定
-            iconSize: [38, 38],
+            html: svgTemplate(index + 1),
+            iconSize: [33, 33],
+            iconAnchor: [17, 17],
           });
 
           L.marker([coord[0], coord[1]], { icon: sectionIcon }).addTo(map.value);
         });
 
-        // 最大落下許容範囲表示
+        // 最大落下範囲表示
         let rangeId = props.message;
-        const airwayApiBaseUrl = useRuntimeConfig().public.airwayApiBaseUrl;
-        const rangeUrl = `${airwayApiBaseUrl}/fall-tolerance-range`;
-        const rangeRes = await axios_get(rangeUrl, {businessNumber: useRuntimeConfig().public.businessNumber}, {});
+        const rangeRes = await $fetch('/api/airway/max-fall-range', { 
+          method: 'GET',
+          query: { businessNumber: useRuntimeConfig().public.businessNumber }
+        });
         console.log(rangeRes);
         if (rangeRes.status != 200) {
           console.error(`error: get fall tolerance range info {status: ${rangeRes.status}}.`);
           this.rangeData = null;
           return;
         }
-        for (let i = 0; i < rangeRes.data.fallToleranceRanges.length; i++) {
-          if (rangeRes.data.fallToleranceRanges[i]['fallToleranceRangeId'] == rangeId) {
-            let coordinates = rangeRes.data.fallToleranceRanges[i]['geometry']['coordinates'][0];
+        const rangeData = convertMaxFallRangeToFallToleranceRanges(rangeRes.data);
+
+        for (let i = 0; i < rangeData.fallToleranceRanges.length; i++) {
+          if (rangeData.fallToleranceRanges[i]['fallToleranceRangeId'] == rangeId) {
+            let coordinates = rangeData.fallToleranceRanges[i]['geometry']['coordinates'][0];
             markerCount.value = coordinates.length;
             for (let j = 0; j < coordinates.length; j++) {
               markerList.value[j] = [coordinates[j][1], coordinates[j][0]];
@@ -232,7 +190,6 @@ export default {
 
     // コンポーネントのマウント時に初期描画
     onMounted(async () => {
-      await loadGeoJson()
       renderMap(props.corridorData);
     });
 
