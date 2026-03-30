@@ -15,8 +15,7 @@ export const useAirwayConvertConnectionOrder = (data) => {
   })
 
   if (data['airway']['airways'].length != airways.length) {
-    console.log(`error: failed to create airways. The length of airways is ${airways.length}. (actually ${data['airway']['airways'].length})`)
-    return null;
+    console.log(`warn: useAirwayConvertConnectionOrder: ${data['airway']['airways'].length - airways.length} airway(s) skipped.`)
   }
 
   convertedData = data;
@@ -110,17 +109,21 @@ export const useAirwayConvertConnectionOrderSingleAirway = (data) => {
   }
 
   // airwayJunctions 組み立て
-  junctionIdList.forEach((junction) => {
-    data['airwayJunctions'].forEach((junc) => {
-      if (junction == junc['airwayJunctionId']) {
-        airwayJunctions.push(junc);
-        return;
-      }
+  // ソース(data['airwayJunctions'])が非空のときのみ順序整列を行う
+  // 空の場合は uasl-list など座標なしデータのため、空のまま区画整列だけ続行
+  if (data['airwayJunctions'].length > 0) {
+    junctionIdList.forEach((junction) => {
+      data['airwayJunctions'].forEach((junc) => {
+        if (junction == junc['airwayJunctionId']) {
+          airwayJunctions.push(junc);
+          return;
+        }
+      })
     })
-  })
-  if (airwayJunctions.length != data['airwayJunctions'].length) {
-    console.log(`error: failed to create airwayJunctions. The length of airwayJunctions is ${airwayJunctions.length}. (actually ${data['airwayJunctions'].length})`)
-    return null;
+    if (airwayJunctions.length != junctionIdList.length) {
+      console.log(`error: failed to create airwayJunctions. The length of airwayJunctions is ${airwayJunctions.length}. (actually ${data['airwayJunctions'].length})`)
+      return null;
+    }
   }
 
   // airwaySections 組み立て
