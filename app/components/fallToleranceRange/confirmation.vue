@@ -60,7 +60,7 @@ console.log(props.rangeData)
         <table class="drn_table drn_table--reserve_conf">
           <tbody>
             <tr class="drn_table__row">
-              <th class="drn_table__label">最大落下許容範囲</th>
+              <th class="drn_table__label">最大落下範囲</th>
               <td class="drn_table__data">{{ rangeData.rangeName }}</td>
             </tr>
             <tr class="drn_table__row">
@@ -70,6 +70,14 @@ console.log(props.rangeData)
             <tr class="drn_table__row">
               <th class="drn_table__label">航路運営者</th>
               <td v-if="cookie_role" class="drn_table__data">{{ cookie_role.operatorName }}</td>
+            </tr>
+            <tr class="drn_table__row">
+              <th class="drn_table__label">系統</th>
+              <td class="drn_table__data">{{ useRuntimeConfig().public.typeList.find(item => (item.value == rangeData.typeId.value))?.title ?? "Not found" }}</td>
+            </tr>
+            <tr class="drn_table__row">
+              <th class="drn_table__label">地域</th>
+              <td class="drn_table__data">{{ useRuntimeConfig().public.regionList.find(item => (item.value == rangeData.regionId.value))?.title ?? "Not found" }}</td>
             </tr>
           </tbody>
         </table>
