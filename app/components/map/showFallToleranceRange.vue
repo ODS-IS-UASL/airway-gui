@@ -99,7 +99,7 @@
       }
     }
 
-    // 最大落下許容範囲を表示
+    // 最大落下範囲を表示
     if (markerList.value.length > 1) {
       const polygon = L.polygon(markerList.value, {
         color: "#949593",
