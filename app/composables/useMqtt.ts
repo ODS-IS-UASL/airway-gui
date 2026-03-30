@@ -3,7 +3,7 @@ import mqtt from 'mqtt'
 
 // グローバルで共有したいステート
 const status = ref('未接続')
-const subscribeTopicName = ref('+')//デフォルトはすべて取得
+const subscribeTopicName = ref<string | string[]>('+')//デフォルトはすべて取得
 const topicName = ref('');
 const latestMessage = ref('');
 const username = ref('admin');
@@ -11,18 +11,6 @@ let password = ref('admin');
 
 // MQTT 接続先
 const mqttUrl = ref('');
-
-const getBrokerURL = async () => {
-  const host = useRuntimeConfig().public.mqttBrokerApiBaseDomain;
-  mqttUrl.value = 'wss://' + host + ':61619';
-
-  // 以下テスト用、後で削除
-  if (host == 'b-d6611275-1a2d-4725-bb7c-b35b1bc9b194-1.mq.ap-northeast-1.amazonaws.com') {
-    password = ref('admin_password');
-  }
-}
-getBrokerURL()
-console.log(mqttUrl.value)
 
 // 接続オプション
 const options = {
@@ -37,7 +25,13 @@ const options = {
 let client: mqtt.MqttClient | null = null
 
 // 接続処理
-function connectMqtt(topic?: string) {
+function connectMqtt(topic?: string | string[]) {
+    const getBrokerURL = async () => {
+      const url = useRuntimeConfig().public.mqttBrokerApiBaseDomain;
+      mqttUrl.value = url;
+    }
+    getBrokerURL()
+    console.log(mqttUrl.value)
     if(topic){
         subscribeTopicName.value = topic;
     }
