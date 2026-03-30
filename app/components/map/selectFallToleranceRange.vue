@@ -86,10 +86,10 @@
         }
       ).addTo(l_map.value);
 
-      // 最大落下許容範囲をすべて表示
+      // 最大落下範囲をすべて表示
       if (data && data.fallToleranceRanges) {
         data['fallToleranceRanges'].forEach((range) => {
-          // 表で選択されている最大落下許容範囲を把握
+          // 表で選択されている最大落下範囲を把握
           if (fid && range['fallToleranceRangeId'] === fid) {
             if (range['geometry']['coordinates'].length) {
               range['geometry']['coordinates'][0].forEach((coord) => {
